@@ -17,7 +17,8 @@ import { WorkerTeam } from './backend/models/WorkerTeam.js';
 import { SystemConfig } from './backend/models/SystemConfig.js';
 import { Vote } from './backend/models/Vote.js';
 import { Notification } from './backend/models/Notification.js';
-import { analyzeIssue, analyzeIssueDeep, batchAnalyzeIssues } from './backend/services/ai.js';
+import { analyzeIssue, analyzeIssueDeep, batchAnalyzeIssues, compareBeforeAfter, isAIAvailable } from './backend/services/ai.js';
+import { DUPLICATE_RADIUS_M, VERIFY_UPVOTE_THRESHOLD, distanceMeters, nearestWard, slaState, isOpen } from './shared/civic.js';
 import { sendNotification } from './backend/services/notification.js';
 import { analyzeImageForensics } from './backend/services/imageForensics.js';
 
@@ -152,9 +153,14 @@ function getDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * c;
 }
 
+/** Append an entry to an issue's public status timeline. */
+const historyEntry = (status: string, by: string, note?: string) => ({ status, at: new Date().toISOString(), by, ...(note ? { note } : {}) });
+const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+const emailConfigured = () => Boolean(process.env.EMAIL_USER && process.env.EMAIL_PASS);
+
 // --- API Routes ---
 
-app.get('/api/health', (req, res) => res.json({ ok: true, database: 'MongoDB', timestamp: new Date().toISOString() }));
+app.get('/api/health', (req, res) => res.json({ ok: true, database: 'MongoDB', ai: isAIAvailable(), email: emailConfigured(), timestamp: new Date().toISOString() }));
 
 app.post('/api/upload', authenticateToken, upload.single('image'), (req: any, res) => {
   if (!req.file) return res.status(400).json({ error: 'No image uploaded' });
@@ -211,7 +217,10 @@ app.post('/api/send-email-otp', async (req, res) => {
     console.warn('⚠️ Email credentials missing in .env. Skipping real email.');
   }
 
-  res.json({ success: true, message: 'OTP sent to email successfully' });
+  // Local development without SMTP: surface the code to the UI so the flow is testable.
+  // Never exposed in production or when real email delivery is configured.
+  const devOtp = !IS_PROD && !emailConfigured() ? otp : undefined;
+  res.json({ success: true, message: 'OTP sent to email successfully', ...(devOtp ? { devOtp } : {}) });
 });
 
 app.post('/api/register', async (req, res) => {
@@ -242,10 +251,10 @@ app.post('/api/register', async (req, res) => {
       const user = await (User as any).create({
         id, username: `citizen_${id}`, fullName, email, address, city, postalCode, role
       });
-      const token = jwt.sign({ id, email, role }, JWT_SECRET);
+      const token = jwt.sign({ id, username: `citizen_${id}`, name: fullName, email, role }, JWT_SECRET);
 
       otpStore.delete(email);
-      return res.json({ token, user: { id, fullName, email, role, reputationPoints: 0, badges: [] } });
+      return res.json({ token, user: { id, username: `citizen_${id}`, fullName, email, role, reputationPoints: 0, badges: [] } });
     }
   } catch (err: any) {
     console.error('Registration Error:', err);
@@ -282,7 +291,7 @@ app.post('/api/login', async (req, res) => {
     const user: any = await (User as any).findOne({ email }).lean();
     if (!user) return res.status(404).json({ error: 'User not found. Please register.' });
     if (user.isBlocked) return res.status(403).json({ error: 'Account blocked' });
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET);
+    const token = jwt.sign({ id: user.id, username: user.username, name: user.fullName, email: user.email, role: user.role }, JWT_SECRET);
     const { password: _, ...profile } = user;
     otpStore.delete(email);
     return res.json({ token, user: profile });
@@ -307,7 +316,7 @@ app.get('/api/leaderboard', authenticateToken, async (req: any, res) => {
     const topUsers = await (User as any).find({ role: 'citizen' })
       .sort({ reputationPoints: -1 })
       .limit(10)
-      .select({ id: 1, username: 1, reputationPoints: 1, badges: 1, _id: 0 })
+      .select({ id: 1, username: 1, fullName: 1, reputationPoints: 1, badges: 1, reportedIssuesCount: 1, city: 1, _id: 0 })
       .lean();
     res.json(topUsers);
   } catch (err) {
@@ -355,6 +364,13 @@ app.post('/api/issues/:id/upvote', authenticateToken, async (req: any, res) => {
     );
     // Award 10 reputation points to the reporter (issue.userId)
     await (User as any).updateOne({ id: issue.userId }, { $inc: { reputationPoints: 10 } });
+    // Community verification: enough neighbours confirming a fresh report promotes it to Verified.
+    if (issue.status === 'Pending' && !issue.isFake && (issue.upvotes || 0) + 1 >= VERIFY_UPVOTE_THRESHOLD) {
+      await (Issue as any).updateOne({ id: issueId }, {
+        $set: { status: 'Verified' },
+        $push: { statusHistory: historyEntry('Verified', 'community', `${VERIFY_UPVOTE_THRESHOLD}+ neighbours confirmed this issue`) },
+      });
+    }
     res.json({ success: true, message: 'Upvote added' });
   } catch (err) {
     console.error("Upvote Error:", err);
@@ -364,9 +380,10 @@ app.post('/api/issues/:id/upvote', authenticateToken, async (req: any, res) => {
 
 app.post('/api/communityVote', authenticateToken, async (req: any, res) => {
   try {
-    const { issueId, vote, comment, proofUrl } = req.body;
+    const { issueId, vote, comment } = req.body;
+    const proofUrl = req.body.proofUrl || req.body.image || null;
     const userId = req.user.id;
-    const username = req.user.username;
+    const username = req.user.name || req.user.username;
 
     const issue = await (Issue as any).findOne({ id: issueId });
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
@@ -377,7 +394,7 @@ app.post('/api/communityVote', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ error: 'You have already voted on this issue.' });
     }
 
-    const voteObj = { userId, username, vote, comment, proofUrl, timestamp: new Date().toISOString() };
+    const voteObj = { userId, username, vote, comment, proofUrl, image: proofUrl, timestamp: new Date().toISOString() };
     const updateQuery: any = { $push: { communityVotes: voteObj } };
 
     if (vote === 'Resolved') {
@@ -445,16 +462,18 @@ app.post('/api/reportIssue', authenticateToken, async (req: any, res) => {
 
     const id = Math.random().toString(36).substr(2, 9);
 
-    // Duplicate Detection
+    // Duplicate Detection: an open issue of the same category within DUPLICATE_RADIUS_M
     let isDuplicate = false;
     let duplicateOf = undefined;
-    if (latitude && longitude) {
-      const existing = await (Issue as any).findOne({
+    const latN = parseFloat(latitude), lngN = parseFloat(longitude);
+    if (!isNaN(latN) && !isNaN(lngN)) {
+      const box = 0.0015; // ~165 m pre-filter, refined by exact distance below
+      const candidates = await (Issue as any).find({
         category: finalCategory,
-        latitude: { $gte: latitude - 0.002, $lte: latitude + 0.002 },
-        longitude: { $gte: longitude - 0.002, $lte: longitude + 0.002 },
-        status: { $ne: 'Resolved' }
-      });
+        latitude: { $gte: latN - box, $lte: latN + box },
+        longitude: { $gte: lngN - box, $lte: lngN + box },
+      }).lean();
+      const existing = candidates.find((c: any) => isOpen(c) && distanceMeters(latN, lngN, c.latitude, c.longitude) <= DUPLICATE_RADIUS_M);
       if (existing) { isDuplicate = true; duplicateOf = existing.id; }
     }
 
@@ -482,8 +501,15 @@ app.post('/api/reportIssue', authenticateToken, async (req: any, res) => {
       status = 'Closed';
     }
 
+    const reporter: any = await (User as any).findOne({ id: req.user.id }).lean();
+    const displayName = reporter?.fullName || req.user.name || reporter?.username || req.user.username || 'Citizen';
+    const statusHistory = [historyEntry('Pending', displayName, 'Report submitted')];
+    if (status === 'Assigned') statusHistory.push(historyEntry('Assigned', 'auto-routing', `Routed to ${assignedTeam}`));
+    if (status === 'Closed') statusHistory.push(historyEntry('Closed', 'system', 'Automatically rejected: image did not match report'));
+
     await (Issue as any).create({
-      id, userId: req.user.id, username: req.user.username, userEmail: req.user.email,
+      id, userId: req.user.id, username: displayName, userEmail: req.user.email,
+      ward: req.body.ward || nearestWard(latN, lngN), statusHistory,
       category: finalCategory, description, imageUrl, locationAddress, latitude, longitude,
       priority: finalPriority, status, division, prabhag, isDuplicate, duplicateOf,
       isFake, adminNotes: isFake ? `⚠️ FAKE DETECTED: ${finalFakeReason || aiSummary}` : aiSummary,
@@ -540,7 +566,7 @@ app.post('/api/reportIssue', authenticateToken, async (req: any, res) => {
     }
 
     res.json({
-      success: true, id, status,
+      success: true, id, status, isDuplicate, duplicateOf,
       aiAnalysis: {
         category: finalCategory, priority: finalPriority,
         isFake: !!isFake, fakeReason,
@@ -556,7 +582,7 @@ app.post('/api/reportIssue', authenticateToken, async (req: any, res) => {
 // --- Admin & Voting ---
 app.get('/api/admin/stats', authenticateToken, isAdmin, async (req, res) => {
   const total = await (Issue as any).countDocuments();
-  const resolved = await (Issue as any).countDocuments({ status: { $in: ['Resolved', 'Confirmed Resolved'] } });
+  const resolved = await (Issue as any).countDocuments({ status: { $in: ['Resolved', 'Pending Citizen Confirmation', 'Confirmed Resolved'] } });
   const pending = await (Issue as any).countDocuments({ status: 'Pending' });
   const inProgress = await (Issue as any).countDocuments({ status: { $in: ['Assigned', 'In Progress'] } });
   const fake = await (Issue as any).countDocuments({ isFake: { $gte: 1 } });
@@ -566,10 +592,14 @@ app.get('/api/admin/stats', authenticateToken, isAdmin, async (req, res) => {
 
 app.get('/api/public/stats', async (req, res) => {
   const total = await (Issue as any).countDocuments();
-  const resolved = await (Issue as any).countDocuments({ status: { $in: ['Resolved', 'Confirmed Resolved'] } });
+  const resolved = await (Issue as any).countDocuments({ status: { $in: ['Resolved', 'Pending Citizen Confirmation', 'Confirmed Resolved'] } });
   const inProgress = await (Issue as any).countDocuments({ status: { $in: ['Assigned', 'In Progress'] } });
-  const pending = await (Issue as any).countDocuments({ status: 'Pending' });
-  res.json({ total, resolved, inProgress, pending });
+  const pending = await (Issue as any).countDocuments({ status: { $in: ['Pending', 'Verified'] } });
+  const citizens = await (User as any).countDocuments({ role: 'citizen' });
+  const closed: any[] = await (Issue as any).find({ resolvedAt: { $exists: true, $ne: null } }).select({ timestamp: 1, resolvedAt: 1, _id: 0 }).lean();
+  const hrs = closed.map(i => (new Date(i.resolvedAt).getTime() - new Date(i.timestamp).getTime()) / 3600000).filter(h => h > 0 && isFinite(h));
+  const avgResolutionHours = hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null;
+  res.json({ total, resolved, inProgress, pending, citizens, avgResolutionHours });
 });
 
 // --- Open Data API ---
@@ -607,7 +637,7 @@ app.get('/api/admin/teams', authenticateToken, isAdmin, async (req, res) => {
 });
 
 // --- Admin: Update Issue (status, team, notes, fake flag) ---
-app.put('/api/admin/issues/:id', authenticateToken, async (req: any, res) => {
+app.put('/api/admin/issues/:id', authenticateToken, isAdmin, async (req: any, res) => {
   try {
     const issueId = req.params.id;
     const { status, assignedTeam, adminNotes, isFake, resolutionImage } = req.body;
@@ -626,17 +656,13 @@ app.put('/api/admin/issues/:id', authenticateToken, async (req: any, res) => {
       if (status === 'Resolved') {
         updates.resolvedAt = new Date().toISOString();
 
-        // Before-After AI Verification
-        if (resolutionImage && issue.imageUrl) {
-          console.log(`🔍 Running Before-After AI Verification for Issue #${issueId}`);
-          // Mock verification (normally we'd send both images to Vertex AI/Gemini)
-          const verificationScore = Math.floor(Math.random() * 20) + 80; // 80-99%
-          updates.verificationScore = verificationScore;
-          updates.isVerified = true;
-          updates.resolutionImageUrl = resolutionImage;
-          updates.adminNotes = (adminNotes || '') + `\n\n[AI Verification]: Confirmed resolved with ${verificationScore}% confidence.`;
+        // AI closure proof: compare before/after photos (Gemini when configured,
+        // otherwise an explicit "unavailable — manual review" verdict).
+        if (resolutionImage) {
+          updates.resolutionImage = resolutionImage;
+          updates.closureCheck = await compareBeforeAfter(issue.imageUrl, resolutionImage, issue.category);
         } else {
-          updates.adminNotes = (adminNotes || '') + `\n\n[AI Verification]: Skipped (Resolution image missing).`;
+          updates.closureCheck = { verdict: 'unavailable', confidence: null, reasoning: 'No after photo was uploaded. Queued for manual review.', model: null, checkedAt: new Date().toISOString() };
         }
 
         // Change to Pending Citizen Confirmation so reporter can verify
@@ -649,14 +675,7 @@ app.put('/api/admin/issues/:id', authenticateToken, async (req: any, res) => {
           issueId
         );
         // Notify admin
-        await sendNotification('admin', 'Issue Resolved', `Issue #${issueId} marked as resolved. AI Verification Score: ${updates.verificationScore || 'N/A'}%`, issueId);
-      } else {
-        await sendNotification(
-          'admin',
-          'Issue Marked Resolved',
-          `Issue #${issueId} (${issue.category}) moved to Pending Citizen Confirmation.`,
-          issueId
-        );
+        await sendNotification('admin', 'Issue Resolved', `Issue #${issueId} marked as resolved. Closure check: ${updates.closureCheck?.verdict}.`, issueId);
       }
 
       if (status === 'In Progress') {
@@ -752,7 +771,15 @@ app.put('/api/admin/issues/:id', authenticateToken, async (req: any, res) => {
       }
     }
 
-    await (Issue as any).updateOne({ id: issueId }, { $set: updates });
+    const finalStatus = updates.status;
+    const push: any = {};
+    if (finalStatus && finalStatus !== oldStatus) {
+      const note = finalStatus === 'Pending Citizen Confirmation' ? 'Crew marked the fix complete; awaiting citizen confirmation'
+        : finalStatus === 'Assigned' && updates.assignedTeam ? `Assigned to ${updates.assignedTeam}` : undefined;
+      push.statusHistory = historyEntry(finalStatus, req.user.username || 'admin', note);
+    }
+
+    await (Issue as any).updateOne({ id: issueId }, { $set: updates, ...(push.statusHistory ? { $push: push } : {}) });
 
     const updated = await (Issue as any).findOne({ id: issueId }).lean();
     res.json({ success: true, issue: updated });
@@ -786,13 +813,17 @@ app.post('/api/issues/:id/confirm', authenticateToken, async (req: any, res) => 
     };
 
     const newStatus = isResolved ? 'Confirmed Resolved' : 'In Progress';
+    if (issue.status !== 'Pending Citizen Confirmation') {
+      return res.status(400).json({ error: 'This issue is not awaiting your confirmation.' });
+    }
 
     await (Issue as any).updateOne({ id: issueId }, {
       $set: {
         citizenVerification: verification,
         status: newStatus,
         proofImageUrl: verificationImage || issue.proofImageUrl
-      }
+      },
+      $push: { statusHistory: historyEntry(newStatus, req.user.name || req.user.username || 'reporter', isResolved ? 'Reporter confirmed the fix' : 'Reporter says the issue persists — reopened') }
     });
 
     // Update reputation
@@ -1175,16 +1206,13 @@ export default app;
 
 async function runEscalationEngine() {
   try {
-    // Escalate issues older than 48 hours (for demo purposes, we'll escalate issues older than 2 minutes if they are pending)
-    // To make it easy to test, we'll use a 2 minute threshold. In production, this would be 48 hours.
-    const thresholdDate = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-
-    const oldIssues = await (Issue as any).find({
-      status: { $in: ['Pending', 'Assigned'] },
-      priority: { $ne: 'Emergency' },
-      timestamp: { $lt: thresholdDate },
+    // Escalate open issues that have breached their category SLA (see shared/civic.ts).
+    const candidates = await (Issue as any).find({
+      status: { $in: ['Pending', 'Verified', 'Assigned', 'In Progress'] },
+      escalated: { $ne: true },
       isFake: { $ne: 1 }
-    });
+    }).lean();
+    const oldIssues = candidates.filter((i: any) => slaState(i).overdue);
 
     if (oldIssues.length > 0) {
       console.log(`[Escalation Engine] Found ${oldIssues.length} unresolved issues older than threshold. Escalating...`);
@@ -1193,12 +1221,12 @@ async function runEscalationEngine() {
           { id: issue.id },
           {
             $set: {
-              priority: 'Emergency',
-              adminNotes: `⚠️ ESCALATED BY SYSTEM: Unresolved for too long. Previous notes: ${issue.adminNotes || ''}`
+              escalated: true,
+              adminNotes: `⚠️ ESCALATED BY SYSTEM: SLA breached. ${issue.adminNotes || ''}`.trim()
             }
           }
         );
-        console.log(`[Escalation Engine] Escalated issue ${issue.id} to Emergency.`);
+        console.log(`[Escalation Engine] Flagged issue ${issue.id} as SLA-breached.`);
       }
     }
   } catch (err) {
@@ -1220,7 +1248,7 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`🚀 Server running on http://localhost:${PORT}`);
       // Run escalation engine every 1 minute
-      setInterval(runEscalationEngine, 60 * 1000);
+      setInterval(runEscalationEngine, 5 * 60 * 1000);
     });
   }
 }

@@ -5,7 +5,13 @@ import path from 'path';
 
 dotenv.config();
 
-const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+// Constructed lazily so a missing key never logs warnings or crashes at boot.
+let _genAI: GoogleGenAI | null = null;
+function getGenAI(): GoogleGenAI {
+  if (!_genAI) _genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+  return _genAI;
+}
+export const isAIAvailable = () => Boolean(process.env.GEMINI_API_KEY);
 
 /**
  * Call Gemini with retry and model fallback
@@ -17,7 +23,7 @@ async function callGeminiWithRetry(parts: any[], maxRetries = 2): Promise<string
   for (const model of models) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const result = await genAI.models.generateContent({
+        const result = await getGenAI().models.generateContent({
           model,
           contents: [{ role: "user", parts }]
         });
@@ -59,7 +65,8 @@ function getMimeType(filePath: string): string {
 function buildImageParts(imageUrl?: string): any[] {
   if (!imageUrl) return [];
   try {
-    const imagePath = path.join(process.cwd(), imageUrl);
+    const candidates = [path.join(process.cwd(), imageUrl), path.join(process.cwd(), 'public', imageUrl)];
+    const imagePath = candidates.find(p => fs.existsSync(p)) || candidates[0];
     if (fs.existsSync(imagePath)) {
       const imageBuffer = fs.readFileSync(imagePath);
       const mimeType = getMimeType(imagePath);
@@ -535,4 +542,44 @@ function getCategoryDepartment(category: string): string {
     'Public Safety': 'Public Safety Division',
   };
   return map[category] || 'General Administration';
+}
+
+
+/**
+ * AI closure proof: compare the citizen's "before" photo with the crew's
+ * "after" photo. Without GEMINI_API_KEY this returns an explicit
+ * `unavailable` verdict so the UI can show "manual review" instead of a
+ * fabricated score.
+ */
+export type ClosureVerdict = 'resolved' | 'not_resolved' | 'uncertain' | 'unavailable';
+export interface ClosureCheck {
+  verdict: ClosureVerdict;
+  confidence: number | null;
+  reasoning: string;
+  model: string | null;
+  checkedAt: string;
+}
+
+export async function compareBeforeAfter(beforeUrl?: string, afterUrl?: string, category?: string): Promise<ClosureCheck> {
+  const checkedAt = new Date().toISOString();
+  if (!process.env.GEMINI_API_KEY) {
+    return { verdict: 'unavailable', confidence: null, reasoning: 'AI check unavailable — no GEMINI_API_KEY configured. Queued for manual review.', model: null, checkedAt };
+  }
+  const before = buildImageParts(beforeUrl);
+  const after = buildImageParts(afterUrl);
+  if (!before.length || !after.length) {
+    return { verdict: 'unavailable', confidence: null, reasoning: 'AI check unavailable — before or after photo could not be read. Queued for manual review.', model: null, checkedAt };
+  }
+  try {
+    const prompt = `You are verifying a municipal repair. Image 1 is the citizen's BEFORE photo of a "${category || 'civic'}" issue. Image 2 is the field crew's AFTER photo.
+Decide whether image 2 shows the same location with the problem fixed.
+Return ONLY JSON: {"verdict":"resolved"|"not_resolved"|"uncertain","confidence":0-100,"reasoning":"one or two sentences"}`;
+    const text = await callGeminiWithRetry([{ text: prompt }, ...before, ...after]);
+    const json = JSON.parse((text || '').replace(/```json|```/g, '').trim());
+    const verdict: ClosureVerdict = ['resolved', 'not_resolved', 'uncertain'].includes(json.verdict) ? json.verdict : 'uncertain';
+    return { verdict, confidence: typeof json.confidence === 'number' ? json.confidence : null, reasoning: String(json.reasoning || ''), model: 'gemini', checkedAt };
+  } catch (err: any) {
+    console.error('Closure check failed:', err?.message || err);
+    return { verdict: 'unavailable', confidence: null, reasoning: 'AI check failed — queued for manual review.', model: null, checkedAt };
+  }
 }

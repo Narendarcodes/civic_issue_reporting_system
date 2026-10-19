@@ -224,10 +224,10 @@ export default function App({ forcePortal }: { forcePortal?: 'user' | 'admin' } 
                 return;
               }
               setUser(userData);
-              if (!userData.latitude && view !== 'location-setup') {
+              if (userData.role !== 'admin' && !userData.latitude && view !== 'location-setup') {
                 setView('location-setup');
               } else {
-                setView(userData.role === 'admin' ? 'admin-dashboard' : 'report');
+                setView(userData.role === 'admin' ? 'admin-dashboard' : 'dashboard');
               }
             } else {
               localStorage.removeItem('civic_token');
@@ -1787,33 +1787,6 @@ const IssueCard = ({ issue, onUpvote, onVerify, user, onRefresh }: any) => {
             >
               <CheckCircle2 size={18} />
               Verify Resolution
-            </button>
-          )}
-
-          {issue.userId === user?.id && issue.status !== 'Resolved' && issue.status !== 'Pending Citizen Confirmation' && issue.status !== 'Confirmed Resolved' && (
-            <button 
-              disabled={loading}
-              onClick={async (e) => {
-                e.stopPropagation();
-                setLoading(true);
-                try {
-                  const res = await apiFetch(`/api/admin/issues/${issue.id}`, {
-                    method: 'PUT',
-                    body: JSON.stringify({ status: 'Resolved' })
-                  });
-                  if (res.ok) {
-                    // Success is handled by polling/refresh
-                  }
-                } catch (err) {
-                  console.error(err);
-                } finally {
-                  setLoading(false);
-                }
-              }}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all bg-slate-100 text-slate-600 hover:bg-slate-200"
-            >
-              <Check size={18} />
-              {loading ? 'Processing...' : 'Mark Resolved (Demo)'}
             </button>
           )}
 
