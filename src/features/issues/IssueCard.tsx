@@ -1,369 +1,102 @@
-import React, { useState } from 'react';
-import { X, ChevronDown, AlertTriangle, CheckCircle2, Check, Eye, MapPin, Camera, ThumbsUp } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { apiFetch, cn, getDistanceKm as getDistance, safeFormatDate, safeJson } from '../../lib/utils';
-import { Card } from '../../components/ui/Card';
-import { Badge } from '../../components/ui/Badge';
+import React from 'react';
+import { motion } from 'motion/react';
+import { ThumbsUp, MapPin, Camera, MessageCircleWarning } from 'lucide-react';
+import { formatDistanceToNowStrict } from 'date-fns';
+import { cn } from '../../lib/utils';
+import { distanceMeters, isAwaitingConfirmation, shortAddress } from '../../lib/civic';
+import { useApp } from '../../app/AppContext';
+import { StatusChip } from '../../components/ui/StatusChip';
+import { CategoryBadge } from '../../components/ui/CategoryBadge';
+import { SlaBadge } from '../../components/ui/SlaBadge';
+import { Avatar } from '../../components/ui/Avatar';
+import { useUpvote, hasVoted } from './useIssueActions';
 
-export const IssueCard = ({ issue, onUpvote, onVerify, user, onRefresh }: any) => {
-  const [showComparison, setShowComparison] = useState(false);
-  const [showCommunityVote, setShowCommunityVote] = useState(false);
-  const [communityVoteLoading, setCommunityVoteLoading] = useState(false);
-  const [communityVoteProof, setCommunityVoteProof] = useState<File | null>(null);
-  const [communityVoteComment, setCommunityVoteComment] = useState('');
-  const [loading, setLoading] = useState(false);
-  
-  if (!issue) return null;
+export const fmtDistance = (m: number) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10_000 ? 1 : 0)} km`);
+export const issueTitle = (i: any) => {
+  const d = String(i?.description || '').trim();
+  const first = d.split(/(?<=[.!?])\s/)[0] || d;
+  return first.length > 90 ? first.slice(0, 88).trimEnd() + '…' : first || `${i?.category || 'Civic'} issue`;
+};
+export const timeAgo = (ts?: string) => {
+  try { return ts ? formatDistanceToNowStrict(new Date(ts), { addSuffix: true }) : ''; } catch { return ''; }
+};
 
-  const distance = user?.latitude && user?.longitude && issue?.latitude && issue?.longitude
-    ? getDistance(user.latitude, user.longitude, issue.latitude, issue.longitude)
-    : null;
-  
-  const isLocal = distance !== null && distance <= 5;
-  const isResolved = issue.status === 'Resolved' || issue.status === 'Confirmed Resolved';
-  const hasCommunityVotes = (issue.voteCountResolved || 0) > 0 || (issue.voteCountNotResolved || 0) > 0;
-
-  const safeAddress = issue.locationAddress || 'Unknown Location';
-  const safeUsername = issue.username || 'Anonymous';
-  const safeDescription = issue.description || 'No description provided';
-
-  const handleCommunityVote = async (vote: 'Resolved' | 'Not Resolved') => {
-    setCommunityVoteLoading(true);
-    try {
-      let imageUrl = null;
-      if (communityVoteProof) {
-        imageUrl = await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result);
-          reader.readAsDataURL(communityVoteProof);
-        });
-      }
-
-      const res = await apiFetch('/api/communityVote', {
-        method: 'POST',
-        body: JSON.stringify({
-          issueId: issue.id,
-          vote,
-          comment: communityVoteComment,
-          image: imageUrl
-        })
-      });
-
-      if (res.ok) {
-        setShowCommunityVote(false);
-        setCommunityVoteProof(null);
-        setCommunityVoteComment('');
-        if (onRefresh) await onRefresh();
-      } else {
-        const data = await safeJson(res);
-        alert(data?.error || 'Failed to submit vote');
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setCommunityVoteLoading(false);
-    }
-  };
+export function IssueCard({ issue, index = 0, compact }: { issue: any; index?: number; compact?: boolean }) {
+  const { user, openIssue } = useApp();
+  const { upvote, busy } = useUpvote();
+  const dist = user?.latitude != null && issue?.latitude != null ? distanceMeters(user.latitude, user.longitude, issue.latitude, issue.longitude) : null;
+  const voted = hasVoted(issue, user?.id);
+  const mine = issue.userId === user?.id;
+  const img = issue.resolutionImage && issue.status !== 'Pending Citizen Confirmation' ? issue.resolutionImage : issue.imageUrl;
 
   return (
-    <Card className="overflow-hidden hover:shadow-xl transition-all border-slate-200/60 group">
-      <div className="relative h-48 overflow-hidden">
-        {issue.imageUrl ? (
-          <img 
-            src={issue.imageUrl} 
-            alt="" 
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
-            referrerPolicy="no-referrer" 
-          />
-        ) : (
-          <div className="w-full h-full bg-slate-100 flex items-center justify-center text-slate-300">
-            <Camera size={48} />
+    <motion.article
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.22, delay: Math.min(index, 8) * 0.04, ease: [0.22, 1, 0.36, 1] }}
+      className="card card-hover group overflow-hidden flex flex-col"
+    >
+      <button onClick={() => openIssue(issue.id)} className="relative block text-left" aria-label={`Open ${issue.category} issue: ${issueTitle(issue)}`}>
+        <div className={cn('relative overflow-hidden bg-surface-sunken', compact ? 'aspect-[16/9]' : 'aspect-[16/10]')}>
+          {img ? (
+            <img src={img} alt={`${issue.category} reported at ${shortAddress(issue.locationAddress)}`} loading="lazy"
+              className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-[1.03]" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="grid h-full w-full place-items-center text-fg-subtle"><Camera size={32} /></div>
+          )}
+          <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/45 to-transparent" />
+          <div className="absolute left-3 top-3 right-3 flex items-start justify-between gap-2">
+            <CategoryBadge category={issue.category} onImage />
+            <SlaBadge issue={issue} size="sm" onImage />
           </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
-        
-        <div className="absolute top-4 left-4 flex flex-col gap-2">
-          <div className="flex gap-2">
-            <Badge variant="info">
-              {issue.category}
-            </Badge>
-            {isLocal && (
-              <Badge variant="success" className="bg-emerald-500 text-white border-none shadow-lg shadow-emerald-500/20">
-                <MapPin size={10} className="mr-1" /> Local
-              </Badge>
-            )}
-          </div>
-          <div className={cn("flex items-center gap-1 backdrop-blur-md rounded-lg px-2 py-1 border w-fit shadow-lg", 
-            issue.priority === 'Emergency' ? "bg-red-500/80 border-red-500 text-white" : 
-            issue.priority === 'High' ? "bg-orange-500/80 border-orange-500 text-white" : 
-            "bg-blue-500/80 border-blue-500 text-white")}>
-            <AlertTriangle size={10} />
-            <span className="text-[9px] font-black uppercase tracking-widest">{issue.priority}</span>
-          </div>
+          {issue.priority === 'Emergency' && (
+            <span className="absolute left-3 bottom-3 rounded-full bg-danger px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">Emergency</span>
+          )}
         </div>
+      </button>
 
-        <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-          <div>
-            <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest mb-1">
-              {safeAddress.split(',')[0]}
-            </p>
-            <h4 className="text-white font-bold text-lg leading-tight line-clamp-1">
-              {safeDescription}
-            </h4>
-          </div>
-          <div className="bg-white/10 backdrop-blur-md rounded-lg px-2 py-1 border border-white/20">
-            <span className="text-white text-[10px] font-bold">
-              {distance !== null ? `${distance.toFixed(1)}km away` : 'Distance unknown'}
-            </span>
-          </div>
-        </div>
-      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <button onClick={() => openIssue(issue.id)} className="text-left">
+          <h3 className="font-sans text-[15px] font-semibold leading-snug text-fg line-clamp-2">{issueTitle(issue)}</h3>
+        </button>
+        <p className="mt-1.5 flex items-center gap-1.5 text-[13px] text-fg-muted">
+          <MapPin size={14} className="shrink-0" />
+          <span className="truncate">{shortAddress(issue.locationAddress)}</span>
+          {dist !== null && <span className="shrink-0 text-fg-subtle">· {fmtDistance(dist)}</span>}
+        </p>
 
-      <div className="p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">
-              {(safeUsername[0] || '?').toUpperCase()}
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-900">{safeUsername}</p>
-              <p className="text-[10px] text-slate-500">{issue.timestamp ? safeFormatDate(issue.timestamp, 'MMM d, h:mm a') : 'N/A'}</p>
-            </div>
-          </div>
-          <Badge variant={isResolved ? 'success' : 'warning'}>
-            {issue.status}
-          </Badge>
-        </div>
-
-        <div className="space-y-2">
-          <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            <span>Community Pulse</span>
-            <span>{issue.upvotes} Upvotes</span>
-          </div>
-          <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${Math.min((issue.upvotes / 20) * 100, 100)}%` }}
-              className={cn(
-                "h-full rounded-full",
-                issue.priority === 'Emergency' ? "bg-red-500" : "bg-civic-primary"
-              )}
-            />
-          </div>
-        </div>
-
-        {hasCommunityVotes && (
-          <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Community Verification</span>
-              <div className="flex gap-2">
-                <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-1">
-                  <Check size={10} /> {issue.voteCountResolved || 0}
-                </span>
-                <span className="text-[10px] font-bold text-red-500 flex items-center gap-1">
-                  <X size={10} /> {issue.voteCountNotResolved || 0}
-                </span>
-              </div>
-            </div>
-            <div className="flex h-1 gap-0.5 rounded-full overflow-hidden">
-              <div 
-                className="bg-emerald-500 h-full transition-all duration-500" 
-                style={{ width: `${((issue.voteCountResolved || 0) / ((issue.voteCountResolved || 0) + (issue.voteCountNotResolved || 0) || 1)) * 100}%` }} 
-              />
-              <div 
-                className="bg-red-400 h-full transition-all duration-500" 
-                style={{ width: `${((issue.voteCountNotResolved || 0) / ((issue.voteCountResolved || 0) + (issue.voteCountNotResolved || 0) || 1)) * 100}%` }} 
-              />
-            </div>
-          </div>
-        )}
-
-        {issue.userId === user?.id && (
-          <div className="pt-2">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tracking Status</span>
-              <span className="text-[10px] font-medium text-civic-primary">{issue.status}</span>
-            </div>
-            <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden flex">
-              <div className={cn("h-full bg-civic-primary transition-all duration-500", 
-                issue.status === 'Pending' ? 'w-1/4' : 
-                issue.status === 'Assigned' ? 'w-2/4' :
-                issue.status === 'In Progress' ? 'w-3/4' : 
-                issue.status === 'Pending Citizen Confirmation' ? 'w-[85%]' : 
-                (issue.status === 'Resolved' || issue.status === 'Confirmed Resolved') ? 'w-full' : 'w-0'
-              )} />
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center gap-3 pt-2">
-          <button 
-            onClick={(e) => { e.stopPropagation(); onUpvote?.(issue.id); }}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-50 text-slate-600 font-bold text-sm hover:bg-civic-primary hover:text-white transition-all border border-slate-100"
-          >
-            <ThumbsUp size={18} />
-            Support
+        {mine && isAwaitingConfirmation(issue) && (
+          <button onClick={() => openIssue(issue.id)} className="mt-3 flex items-center gap-2 rounded-[var(--radius-md)] bg-brand-soft px-3 py-2 text-left text-[13px] font-semibold text-brand-strong">
+            <MessageCircleWarning size={16} /> Crew says it's fixed — confirm?
           </button>
-          
-          {issue.status === 'Pending Citizen Confirmation' && onVerify && (
-            <button 
-              onClick={(e) => { e.stopPropagation(); onVerify?.(); }}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-bold text-sm transition-all shadow-lg bg-emerald-500 text-white hover:bg-emerald-600 shadow-emerald-500/20"
-            >
-              <CheckCircle2 size={18} />
-              Verify Resolution
-            </button>
-          )}
+        )}
 
-          {(issue.workerImageUrl || issue.proofImageUrl) && (
-            <button 
-              onClick={(e) => { e.stopPropagation(); setShowComparison(!showComparison); }}
-              className="p-2.5 rounded-xl bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all border border-slate-100"
-              title="Compare Before/After"
-            >
-              <Eye size={18} />
-            </button>
-          )}
+        <div className="mt-auto pt-4 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <StatusChip issue={issue} size="sm" />
+          </div>
+          <button
+            onClick={() => upvote(issue)}
+            disabled={busy === issue.id}
+            aria-pressed={voted}
+            aria-label={`${voted ? 'Remove upvote' : 'Upvote'} (${issue.upvotes || 0})`}
+            className={cn(
+              'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-semibold tabular-nums transition-colors',
+              voted ? 'border-brand bg-brand text-brand-fg' : 'border-line text-fg-muted hover:border-brand hover:text-brand',
+            )}
+          >
+            <ThumbsUp size={14} strokeWidth={2.4} /> {issue.upvotes || 0}
+          </button>
         </div>
-
-        {issue.citizenVerification && (
-          <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest">Reporter Verification</span>
-              <Badge variant="success" className="text-[9px] py-0 px-1.5">
-                {issue.citizenVerification.vote}
-              </Badge>
-            </div>
-            {issue.citizenVerification.comment && (
-              <p className="text-xs text-slate-600 italic">"{issue.citizenVerification.comment}"</p>
-            )}
-            {issue.citizenVerification.verificationImage && (
-              <img 
-                src={issue.citizenVerification.verificationImage} 
-                className="w-full h-24 object-cover rounded-lg border border-emerald-200" 
-                referrerPolicy="no-referrer" 
-              />
-            )}
+        {!compact && (
+          <div className="mt-3 flex items-center gap-2 border-t border-line pt-3 text-xs text-fg-subtle">
+            <Avatar name={issue.username || 'Citizen'} size={20} />
+            <span className="truncate">{mine ? 'You' : issue.username || 'Citizen'}</span>
+            <span>·</span>
+            <span className="shrink-0">{timeAgo(issue.timestamp)}</span>
           </div>
         )}
-
-        {issue.status === 'Resolved' && !onVerify && (
-          <div className="pt-2">
-            <button 
-              onClick={() => setShowCommunityVote(!showCommunityVote)}
-              className="w-full flex items-center justify-between px-4 py-2 bg-slate-50 rounded-xl text-[10px] font-bold text-slate-500 uppercase tracking-widest hover:bg-slate-100 transition-all"
-            >
-              <span>Community Voting</span>
-              <ChevronDown size={14} className={cn("transition-transform", showCommunityVote && "rotate-180")} />
-            </button>
-            
-            <AnimatePresence>
-              {showCommunityVote && (
-                <motion.div 
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden"
-                >
-                  <div className="pt-3 space-y-3">
-                    <div className="flex gap-2">
-                      <button 
-                        disabled={communityVoteLoading}
-                        onClick={() => handleCommunityVote('Resolved')}
-                        className="flex-1 py-2 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-black border border-emerald-100 hover:bg-emerald-100 transition-all"
-                      >
-                        RESOLVED ✔
-                      </button>
-                      <button 
-                        disabled={communityVoteLoading}
-                        onClick={() => handleCommunityVote('Not Resolved')}
-                        className="flex-1 py-2 bg-red-50 text-red-600 rounded-lg text-[10px] font-black border border-red-100 hover:bg-red-100 transition-all"
-                      >
-                        NOT RESOLVED ✘
-                      </button>
-                    </div>
-                    <div className="space-y-2">
-                      <textarea 
-                        className="w-full px-3 py-2 rounded-lg border border-slate-200 text-[10px] outline-none focus:ring-2 focus:ring-civic-primary"
-                        placeholder="Add a comment (optional)..."
-                        value={communityVoteComment}
-                        onChange={e => setCommunityVoteComment(e.target.value)}
-                      />
-                      <div className="relative">
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          className="absolute inset-0 opacity-0 cursor-pointer" 
-                          onChange={e => setCommunityVoteProof(e.target.files?.[0] || null)}
-                        />
-                        <div className="py-2 border border-dashed border-slate-200 rounded-lg text-center bg-white">
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">
-                            {communityVoteProof ? communityVoteProof.name : 'Attach Proof (Optional)'}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {issue.communityVotes && issue.communityVotes.length > 0 && (
-          <div className="pt-2 border-t border-slate-100 mt-2">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Community Feedback</p>
-            <div className="space-y-2 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-              {issue.communityVotes.map((v: any, idx: number) => (
-                <div key={idx} className="bg-slate-50 p-2 rounded-lg border border-slate-100">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[9px] font-bold text-slate-700">{v.username}</span>
-                    <span className={cn("text-[8px] font-bold px-1 rounded", v.vote === 'Resolved' ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700")}>
-                      {v.vote}
-                    </span>
-                  </div>
-                  {v.comment && <p className="text-[10px] text-slate-600 italic">"{v.comment}"</p>}
-                  {v.image && <img src={v.image} className="mt-1 w-full h-16 object-cover rounded border border-slate-200" referrerPolicy="no-referrer" />}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <AnimatePresence>
-          {showComparison && (
-            <motion.div 
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="pt-4 border-t border-slate-100"
-            >
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-slate-500 uppercase">Reported</p>
-                  <img src={issue.imageUrl} className="w-full aspect-square rounded-lg object-cover border border-slate-200" referrerPolicy="no-referrer" />
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-emerald-600 uppercase">Worker Fix</p>
-                  {issue.workerImageUrl ? (
-                    <img src={issue.workerImageUrl} className="w-full aspect-square rounded-lg object-cover border border-emerald-200" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-full aspect-square rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center text-[9px] text-slate-400 text-center p-1">Pending</div>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <p className="text-[9px] font-bold text-red-600 uppercase">Citizen Proof</p>
-                  {issue.proofImageUrl ? (
-                    <img src={issue.proofImageUrl} className="w-full aspect-square rounded-lg object-cover border border-red-200" referrerPolicy="no-referrer" />
-                  ) : (
-                    <div className="w-full aspect-square rounded-lg bg-slate-50 border border-dashed border-slate-200 flex items-center justify-center text-[9px] text-slate-400 text-center p-1">No proof</div>
-                  )}
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
-    </Card>
+    </motion.article>
   );
-};
+}

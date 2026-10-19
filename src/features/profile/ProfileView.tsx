@@ -1,119 +1,134 @@
-import React from 'react';
-import { Check, Eye } from 'lucide-react';
-import { motion } from 'motion/react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
+import { format } from 'date-fns';
+import { Mail, MapPin, Sun, Moon, Monitor, Award, Flag, ShieldCheck, Eye, Flame, Star, LogOut, Pencil, Activity } from 'lucide-react';
+import { useApp } from '../../app/AppContext';
+import { useTheme, type ThemePref } from '../../lib/theme';
+import { displayName, isResolved, shortAddress, stageOf } from '../../lib/civic';
 import { cn } from '../../lib/utils';
-import { Card } from '../../components/ui/Card';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Avatar } from '../../components/ui/Avatar';
+import { Button } from '../../components/ui/Button';
+import { Segmented } from '../../components/ui/Segmented';
+import { Modal } from '../../components/ui/Modal';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { StatusChip } from '../../components/ui/StatusChip';
+import { issueTitle } from '../issues/IssueCard';
 
-export const ProfileView = ({ user }: any) => {
-  const journey = [
-    { date: 'Mar 10, 2026', event: 'Joined CivicConnect', icon: '👋', color: 'bg-blue-500' },
-    { date: 'Mar 12, 2026', event: 'Reported first issue', icon: '📝', color: 'bg-amber-500' },
-    { date: 'Mar 14, 2026', event: 'Earned "First Responder" badge', icon: '🚨', color: 'bg-emerald-500' },
-    { date: 'Mar 15, 2026', event: 'Verified 5 local fixes', icon: '✅', color: 'bg-purple-500' },
+const LocationSetup = lazy(() => import('../auth/LocationSetup').then(m => ({ default: m.LocationSetup })));
+
+export function ProfileView() {
+  const { user, issues, isAdmin, logout, refreshMe, openIssue } = useApp();
+  const { pref, setPref } = useTheme();
+  const [editLoc, setEditLoc] = useState(false);
+  const name = displayName(user);
+
+  const mine = useMemo(() => issues.filter(i => i.userId === user?.id), [issues, user?.id]);
+  const verifications = useMemo(() => issues.filter(i => (i.communityVotes || []).some((v: any) => v.userId === user?.id)).length, [issues, user?.id]);
+  const upvotesGiven = useMemo(() => issues.filter(i => (i.votedBy || []).includes(user?.id)).length, [issues, user?.id]);
+  const fixed = mine.filter(isResolved).length;
+
+  const achievements = [
+    { icon: Flag, label: 'First report', got: mine.length >= 1, hint: 'File your first report' },
+    { icon: Eye, label: 'Eagle eye', got: mine.length >= 5, hint: '5 reports filed' },
+    { icon: ShieldCheck, label: 'Fix verifier', got: verifications >= 1, hint: 'Verify a neighbour’s fix' },
+    { icon: Star, label: 'Problem solver', got: fixed >= 3, hint: '3 of your reports fixed' },
+    { icon: Flame, label: 'Community voice', got: upvotesGiven >= 10, hint: 'Upvote 10 issues' },
+    ...((user?.badges || []) as string[]).map(b => ({ icon: Award, label: b, got: true, hint: b })),
   ];
 
-  return (
-    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl mx-auto space-y-8">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Profile Card */}
-        <Card className="md:col-span-1 p-8 flex flex-col items-center text-center">
-          <div className="relative mb-6">
-            <div className="w-32 h-32 bg-gradient-to-br from-civic-primary to-blue-600 rounded-[2.5rem] flex items-center justify-center text-white text-5xl font-black shadow-2xl shadow-blue-500/20">
-              {user?.username?.[0] || 'U'}
-            </div>
-            <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-emerald-500 rounded-2xl border-4 border-white flex items-center justify-center text-white shadow-lg">
-              <Check size={20} />
-            </div>
-          </div>
-          
-          <h2 className="text-2xl font-display font-bold text-slate-900 mb-1 truncate w-full px-4">{user?.username}</h2>
-          <p className="text-sm text-slate-500 mb-6 break-all px-4">{user?.email}</p>
-          
-          <div className="w-full space-y-3">
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Rank</span>
-              <span className="text-xs font-bold text-civic-primary">Elite Citizen</span>
-            </div>
-            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Joined</span>
-              <span className="text-xs font-bold text-slate-600">March 2026</span>
-            </div>
-          </div>
+  const activity = useMemo(() => {
+    const ev: { at: string; text: string; issue: any }[] = [];
+    for (const i of mine) for (const h of i.statusHistory || []) ev.push({ at: h.at, text: stageOf({ status: h.status }), issue: i });
+    return ev.filter(e => e.at).sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 8);
+  }, [mine]);
 
-          <div className="mt-8 w-full pt-8 border-t border-slate-100">
-            <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Badges Unlocked</h4>
-            <div className="flex flex-wrap justify-center gap-3">
-              {user?.badges?.map((badge: string) => (
-                <div key={badge} className="w-10 h-10 bg-white border border-slate-100 rounded-xl flex items-center justify-center text-xl shadow-sm hover:scale-110 transition-transform cursor-help group relative">
-                  {badge === 'First Responder' ? '🚨' : 
-                   badge === 'Eagle Eye' ? '👁️' : 
-                   badge === 'Locality Hero' ? '🏠' :
-                   badge === 'Active Citizen' ? '🏅' : '🎖️'}
-                  <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-slate-800 text-white text-[8px] rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none">
-                    {badge}
-                  </div>
+  return (
+    <div className="mx-auto max-w-5xl">
+      <PageHeader eyebrow={isAdmin ? 'Account' : 'Profile'} title={isAdmin ? 'Your account' : 'Your civic profile'} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="p-6 lg:row-span-2">
+          <div className="flex flex-col items-center text-center">
+            <Avatar name={name} size={88} />
+            <h2 className="mt-4 text-xl font-semibold">{name}</h2>
+            <p className="text-sm text-fg-muted">{isAdmin ? 'Administrator · GHMC operations' : `Citizen since ${user?.id ? '2026' : ''}`}</p>
+          </div>
+          <dl className="mt-6 space-y-3 text-sm">
+            <div className="flex items-start gap-3"><Mail size={16} className="mt-0.5 text-fg-subtle" /><dd className="min-w-0 break-all text-fg">{user?.email || '—'}</dd></div>
+            {!isAdmin && (
+              <div className="flex items-start gap-3">
+                <MapPin size={16} className="mt-0.5 text-fg-subtle" />
+                <dd className="min-w-0 flex-1 text-fg">{shortAddress(user?.locationAddress)}</dd>
+                <button onClick={() => setEditLoc(true)} className="inline-flex items-center gap-1 text-xs font-semibold text-brand hover:underline"><Pencil size={12} />Change</button>
+              </div>
+            )}
+          </dl>
+          {!isAdmin && (
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {[['Reputation', user?.reputationPoints || 0], ['Reports', mine.length], ['Fixed', fixed], ['Verified', verifications]].map(([l, v]) => (
+                <div key={l as string} className="rounded-[var(--radius-md)] bg-surface-muted p-3 text-center">
+                  <p className="font-display text-2xl font-semibold tabular-nums">{v}</p>
+                  <p className="text-xs text-fg-muted">{l}</p>
                 </div>
               ))}
             </div>
+          )}
+          <Button variant="outline" className="mt-6 w-full" onClick={logout} leftIcon={<LogOut size={16} />}>Sign out</Button>
+        </Card>
+
+        <Card className="lg:col-span-2 self-start">
+          <CardHeader title="Appearance" subtitle="Dark mode follows your system unless you choose otherwise." />
+          <div className="px-5 pb-5 sm:px-6">
+            <Segmented<ThemePref> label="Theme" value={pref} onChange={setPref} options={[
+              { value: 'light', label: 'Light', icon: <Sun size={14} /> },
+              { value: 'dark', label: 'Dark', icon: <Moon size={14} /> },
+              { value: 'system', label: 'System', icon: <Monitor size={14} /> },
+            ]} />
           </div>
         </Card>
 
-        {/* Stats & Journey */}
-        <div className="md:col-span-2 space-y-8">
-          {/* Impact Stats */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-center space-y-1">
-              <p className="text-3xl font-black text-slate-900">{user?.reputationPoints || 0}</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Reputation</p>
-            </div>
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-center space-y-1">
-              <p className="text-3xl font-black text-emerald-500">{user?.badges?.length || 0}</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Badges</p>
-            </div>
-            <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm text-center space-y-1">
-              <p className="text-3xl font-black text-civic-accent">{(user?.reputationPoints || 0) * 1.5}</p>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Impact Score</p>
-            </div>
-          </div>
-
-          {/* Journey Timeline */}
-          <Card className="p-8">
-            <h3 className="text-lg font-bold text-slate-900 mb-8">Civic Journey</h3>
-            <div className="space-y-8 relative before:absolute before:left-[17px] before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
-              {journey.map((item, i) => (
-                <div key={i} className="relative flex gap-6 items-start">
-                  <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center text-white z-10 shadow-lg", item.color)}>
-                    <span className="text-sm">{item.icon}</span>
+        {!isAdmin && (
+          <Card className="lg:col-span-2">
+            <CardHeader title="Achievements" subtitle="Earned from what you actually do on Civi-Snap." icon={<Award size={16} />} />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 px-5 pb-5 sm:px-6">
+              {achievements.map(a => {
+                const Icon = a.icon;
+                return (
+                  <div key={a.label} className={cn('flex items-center gap-3 rounded-[var(--radius-md)] border p-3', a.got ? 'border-brand/25 bg-brand-soft' : 'border-dashed border-line')}>
+                    <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-full', a.got ? 'bg-brand text-brand-fg' : 'bg-surface-muted text-fg-subtle')}><Icon size={16} /></span>
+                    <span className="min-w-0"><span className={cn('block truncate text-[13px] font-semibold', a.got ? 'text-fg' : 'text-fg-muted')}>{a.label}</span><span className="block truncate text-[11px] text-fg-subtle">{a.got ? 'Unlocked' : a.hint}</span></span>
                   </div>
-                  <div className="flex-1 pt-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.date}</p>
-                    <p className="text-sm font-bold text-slate-900 mt-0.5">{item.event}</p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
+        )}
 
-          {/* Earning Guide */}
-          <Card className="p-8 bg-slate-900 text-white overflow-hidden relative">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-civic-primary/20 blur-3xl rounded-full -mr-16 -mt-16" />
-            <h3 className="text-lg font-bold mb-6">How to Level Up</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[
-                { pts: '+10', label: 'Report an issue', color: 'text-blue-400' },
-                { pts: '+50', label: 'Resolution confirmed', color: 'text-emerald-400' },
-                { pts: '+5', label: 'Verify local fix', color: 'text-amber-400' },
-                { pts: '+2', label: 'Receive upvote', color: 'text-purple-400' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
-                  <span className={cn("text-lg font-black", item.color)}>{item.pts}</span>
-                  <span className="text-xs font-medium text-slate-300">{item.label}</span>
-                </div>
-              ))}
-            </div>
+        {!isAdmin && (
+          <Card className="lg:col-span-3">
+            <CardHeader title="Recent activity" subtitle="Status changes on issues you reported" icon={<Activity size={16} />} />
+            {activity.length === 0 ? <EmptyState compact title="No activity yet" body="Updates on your reports will show up here." /> : (
+              <ul className="divide-y divide-line">
+                {activity.map((e, k) => (
+                  <li key={k}>
+                    <button onClick={() => openIssue(e.issue.id)} className="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-surface-muted sm:px-6">
+                      <StatusChip stage={e.text as any} size="sm" />
+                      <span className="min-w-0 flex-1 truncate text-sm text-fg">{issueTitle(e.issue)}</span>
+                      <span className="shrink-0 text-xs text-fg-subtle">{format(new Date(e.at), 'd MMM')}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
-        </div>
+        )}
       </div>
-    </motion.div>
+
+      <Modal open={editLoc} onClose={() => setEditLoc(false)} title="Change your area" labelledBy="loc-title" className="max-w-2xl">
+        <Suspense fallback={<div className="p-6 text-sm text-fg-muted">Loading map…</div>}>
+          {editLoc && <LocationSetup user={user} embedded onComplete={async () => { await refreshMe(); setEditLoc(false); }} />}
+        </Suspense>
+      </Modal>
+    </div>
   );
-};
+}

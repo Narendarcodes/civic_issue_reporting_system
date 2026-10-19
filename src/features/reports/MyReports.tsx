@@ -1,92 +1,77 @@
-import React, { useState, useMemo } from 'react';
-import { History } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../../lib/utils';
+import React, { useMemo, useState } from 'react';
+import { ClipboardList, PlusCircle, ArrowRight } from 'lucide-react';
+import { useApp } from '../../app/AppContext';
+import { isAwaitingConfirmation, isOpen, isResolved, stageOf, STAGE_FLOW } from '../../lib/civic';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Segmented } from '../../components/ui/Segmented';
 import { Card } from '../../components/ui/Card';
+import { Button } from '../../components/ui/Button';
+import { StatusChip } from '../../components/ui/StatusChip';
+import { SlaBadge } from '../../components/ui/SlaBadge';
+import { CategoryIcon } from '../../components/ui/CategoryBadge';
+import { RowSkeleton } from '../../components/ui/Skeleton';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { cn } from '../../lib/utils';
+import { issueTitle, timeAgo } from '../issues/IssueCard';
+import { shortAddress } from '../../lib/civic';
 
-import { IssueCard } from '../issues/IssueCard';
-import { VerificationModal } from '../issues/VerificationModal';
+type Tab = 'active' | 'confirm' | 'done' | 'all';
 
-export const MyReports = ({ issues = [], user, onRefresh }: any) => {
-  const [votingIssue, setVotingIssue] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'New' | 'In-Progress' | 'Completed'>('New');
+/** Progress dots for the happy path. */
+function MiniProgress({ issue }: { issue: any }) {
+  const s = stageOf(issue);
+  const idx = STAGE_FLOW.indexOf(s);
+  return (
+    <div className="flex items-center gap-1" aria-label={`Stage ${s}`}>
+      {STAGE_FLOW.map((st, k) => <span key={st} className={cn('h-1.5 w-6 rounded-full', s === 'Rejected' ? 'bg-rose-300/60' : k <= idx ? 'bg-brand' : 'bg-surface-sunken')} />)}
+    </div>
+  );
+}
 
-  // Ensure we are only looking at the user's issues with safe array logic
-  const myIssues = (Array.isArray(issues) ? issues : []).filter((i: any) => i && i.userId === user?.id);
-
-  const displayedIssues = useMemo(() => {
-    return myIssues.filter(i => {
-      if (activeTab === 'New') return i.status === 'Pending' || i.status === 'Assigned';
-      if (activeTab === 'In-Progress') return i.status === 'In-Progress' || i.status === 'In Progress' || i.status === 'Pending Citizen Confirmation';
-      if (activeTab === 'Completed') return i.status === 'Resolved' || i.status === 'Confirmed Resolved';
-      return false;
-    });
-  }, [myIssues, activeTab]);
+export function MyReports() {
+  const { issues, user, issuesLoading, issuesError, refresh, go, openIssue } = useApp();
+  const mine = useMemo(() => issues.filter(i => i.userId === user?.id).sort((a, b) => +new Date(b.timestamp) - +new Date(a.timestamp)), [issues, user?.id]);
+  const confirm = mine.filter(isAwaitingConfirmation);
+  const [tab, setTab] = useState<Tab>(confirm.length ? 'confirm' : 'active');
+  const rows = mine.filter(i => tab === 'all' ? true : tab === 'active' ? isOpen(i) : tab === 'confirm' ? isAwaitingConfirmation(i) : (isResolved(i) && !isAwaitingConfirmation(i)) || stageOf(i) === 'Rejected');
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 20 }} 
-      animate={{ opacity: 1, y: 0 }}
-      className="space-y-8"
-    >
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-display font-bold text-slate-900">My Civic Reports</h2>
-          <p className="text-slate-500">Track the progress of issues you've reported.</p>
-        </div>
-        <div className="bg-white px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
-          <span className="text-sm font-bold text-slate-900">{myIssues.length} Reports</span>
-        </div>
-      </div>
-
-      <div className="flex gap-4 border-b border-slate-200">
-        {(['New', 'In-Progress', 'Completed'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              "pb-4 px-2 text-sm font-bold transition-all border-b-2",
-              activeTab === tab 
-                ? "border-civic-primary text-civic-primary" 
-                : "border-transparent text-slate-500 hover:text-slate-700"
+    <div>
+      <PageHeader eyebrow="Tracking" title="My reports" subtitle="Every report you've filed, where it stands, and how long the city has left to fix it."
+        actions={<Button onClick={() => go('report')} leftIcon={<PlusCircle size={16} />}>New report</Button>} />
+      <Segmented label="Filter reports" value={tab} onChange={setTab} options={[
+        { value: 'active', label: 'In progress', count: mine.filter(isOpen).length },
+        { value: 'confirm', label: 'Needs your OK', count: confirm.length },
+        { value: 'done', label: 'Closed', count: mine.filter(i => (isResolved(i) && !isAwaitingConfirmation(i)) || stageOf(i) === 'Rejected').length },
+        { value: 'all', label: 'All', count: mine.length },
+      ]} className="mb-4 max-w-full overflow-x-auto no-scrollbar" />
+      <Card className="overflow-hidden">
+        {issuesError && !issues.length ? <div className="p-4"><ErrorState message={issuesError} onRetry={refresh} /></div>
+          : issuesLoading ? <RowSkeleton rows={5} />
+            : rows.length === 0 ? (
+              <EmptyState icon={<ClipboardList size={22} />}
+                title={mine.length === 0 ? 'You have not reported anything yet' : tab === 'confirm' ? 'Nothing waiting on you' : 'Nothing here'}
+                body={mine.length === 0 ? 'Spotted a pothole or an overflowing bin? It takes under a minute, and you earn 10 points.' : 'When a crew marks one of your reports as fixed, it shows up here for you to confirm.'}
+                action={mine.length === 0 ? <Button onClick={() => go('report')} leftIcon={<PlusCircle size={16} />}>Report your first issue</Button> : undefined} />
+            ) : (
+              <ul className="divide-y divide-line">
+                {rows.map(i => (
+                  <li key={i.id}>
+                    <button onClick={() => openIssue(i.id)} className="flex w-full items-center gap-4 px-4 py-4 text-left hover:bg-surface-muted sm:px-5">
+                      {i.imageUrl ? <img src={i.imageUrl} alt="" className="h-14 w-14 shrink-0 rounded-[var(--radius-md)] object-cover" /> : <CategoryIcon category={i.category} size={56} />}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-semibold text-fg">{issueTitle(i)}</span>
+                        <span className="mt-0.5 block truncate text-xs text-fg-muted">{i.category} · {shortAddress(i.locationAddress)} · {timeAgo(i.timestamp)}</span>
+                        <span className="mt-2 flex flex-wrap items-center gap-2"><StatusChip issue={i} size="sm" /><SlaBadge issue={i} size="sm" /><span className="hidden sm:inline-flex"><MiniProgress issue={i} /></span></span>
+                      </span>
+                      {isAwaitingConfirmation(i) ? <span className="hidden sm:inline-flex shrink-0 items-center gap-1 rounded-full bg-brand px-3 py-1.5 text-xs font-semibold text-brand-fg">Confirm fix <ArrowRight size={13} /></span>
+                        : <ArrowRight size={16} className="shrink-0 text-fg-subtle" />}
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {displayedIssues.length === 0 ? (
-        <Card className="p-12 text-center">
-          <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
-            <History size={32} />
-          </div>
-          <h3 className="text-xl font-bold text-slate-900 mb-2">No {activeTab} reports</h3>
-          <p className="text-slate-500 mb-6">You don't have any reports in this category.</p>
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {displayedIssues.map((issue: any) => (
-            <IssueCard 
-              key={issue.id} 
-              issue={issue} 
-              user={user}
-              onRefresh={onRefresh}
-              onVerify={() => setVotingIssue(issue)}
-            />
-          ))}
-        </div>
-      )}
-
-      <AnimatePresence>
-        {votingIssue && (
-          <VerificationModal 
-            issue={votingIssue} 
-            onClose={() => setVotingIssue(null)} 
-            onVoteSuccess={() => setVotingIssue(null)}
-          />
-        )}
-      </AnimatePresence>
-    </motion.div>
+      </Card>
+    </div>
   );
-};
+}

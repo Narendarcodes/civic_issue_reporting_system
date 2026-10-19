@@ -11,4 +11,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 const DefaultIcon = L.icon({ iconUrl: markerIcon, shadowUrl: markerShadow, iconSize: [25, 41], iconAnchor: [12, 41] });
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// Leaflet plugins (markercluster, heat) attach to the global `L`.
+if (typeof window !== 'undefined') (window as any).L = L;
+
 export default L;

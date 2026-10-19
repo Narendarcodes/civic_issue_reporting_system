@@ -1,319 +1,171 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, MapPin, MessageSquare, Building2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { apiFetch, cn, safeJson } from '../../lib/utils';
-import { Button } from '../../components/ui/Button';
+import { Search, Table2, Columns3, AlarmClockOff, ThumbsUp, SearchX, X } from 'lucide-react';
+import { useApp } from '../../app/AppContext';
+import { CATEGORIES, STAGES, STAGE_FLOW, STAGE_META, slaState, stageOf, shortAddress, type Stage, isOpen } from '../../lib/civic';
+import { cn } from '../../lib/utils';
+import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
-import { Badge } from '../../components/ui/Badge';
+import { Segmented } from '../../components/ui/Segmented';
+import { Select, Input } from '../../components/ui/Field';
+import { Button } from '../../components/ui/Button';
+import { StatusChip } from '../../components/ui/StatusChip';
+import { SlaBadge } from '../../components/ui/SlaBadge';
+import { CategoryIcon } from '../../components/ui/CategoryBadge';
+import { RowSkeleton } from '../../components/ui/Skeleton';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { issueTitle, timeAgo } from '../issues/IssueCard';
+import { ManageIssueDrawer, teamName, useTeams } from './ManageIssueDrawer';
 
-export const AdminIssueManager = ({ issues = [], onRefresh }: any) => {
-  const [filter, setFilter] = useState('All');
-  const [selectedIssue, setSelectedIssue] = useState<any>(null);
-  const [teams, setTeams] = useState<any[]>([]);
-  
-  const safeIssues = Array.isArray(issues) ? issues : [];
+type Sort = 'deadline' | 'newest' | 'upvotes';
 
-  useEffect(() => {
-    apiFetch('/api/admin/teams').then(safeJson).then(data => data && setTeams(data));
-  }, []);
+export function AdminIssueManager() {
+  const { issues, issuesLoading, issuesError, refresh } = useApp();
+  const teams = useTeams();
+  const [mode, setMode] = useState<'table' | 'board'>('table');
+  const [q, setQ] = useState('');
+  const [stage, setStage] = useState<'all' | Stage>('all');
+  const [cat, setCat] = useState('all');
+  const [team, setTeam] = useState('all');
+  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [sort, setSort] = useState<Sort>('deadline');
+  const [selected, setSelected] = useState<any>(null);
 
   const filtered = useMemo(() => {
-    if (filter === 'All') return safeIssues;
-    if (filter === 'Resolved') return safeIssues.filter((i: any) => i && (i.status === 'Resolved' || i.status === 'Confirmed Resolved' || i.status === 'Pending Citizen Confirmation'));
-    return safeIssues.filter((i: any) => i && i.status === filter);
-  }, [safeIssues, filter]);
+    const n = q.trim().toLowerCase();
+    return issues
+      .filter(i => (stage === 'all' || stageOf(i) === stage)
+        && (cat === 'all' || i.category === cat)
+        && (team === 'all' || (team === 'none' ? !i.assignedTeam : i.assignedTeam === team))
+        && (!overdueOnly || (isOpen(i) && slaState(i).overdue))
+        && (!n || `${i.id} ${i.description} ${i.locationAddress} ${i.ward || ''} ${i.username || ''}`.toLowerCase().includes(n)))
+      .sort((a, b) => sort === 'newest' ? +new Date(b.timestamp) - +new Date(a.timestamp)
+        : sort === 'upvotes' ? (b.upvotes || 0) - (a.upvotes || 0)
+          : (isOpen(b) ? 1 : 0) - (isOpen(a) ? 1 : 0) || slaState(a).remainingMs - slaState(b).remainingMs);
+  }, [issues, q, stage, cat, team, overdueOnly, sort]);
 
-  const [adminResolutionImage, setAdminResolutionImage] = useState<string | null>(null);
-  const [managementLoading, setManagementLoading] = useState(false);
-
-  const updateIssue = async (id: string, updates: any) => {
-    setManagementLoading(true);
-    try {
-      const res = await apiFetch(`/api/admin/issues/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ ...updates, resolutionImage: adminResolutionImage || updates.resolutionImage })
-      });
-      if (res.ok) {
-        setSelectedIssue(null);
-        setAdminResolutionImage(null);
-        if (onRefresh) await onRefresh();
-      } else {
-        const errData = await safeJson(res);
-        alert(errData?.error || 'Failed to update issue');
-      }
-    } catch (err) {
-      console.error(err);
-      alert('An error occurred during update');
-    } finally {
-      setManagementLoading(false);
-    }
-  };
-
-  const handleAdminPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setAdminResolutionImage(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
+  const overdueCount = issues.filter(i => isOpen(i) && slaState(i).overdue).length;
+  const stageCounts = useMemo(() => Object.fromEntries(STAGES.map(s => [s, issues.filter(i => stageOf(i) === s).length])), [issues]);
+  const filtersOn = q || stage !== 'all' || cat !== 'all' || team !== 'all' || overdueOnly;
+  const clear = () => { setQ(''); setStage('all'); setCat('all'); setTeam('all'); setOverdueOnly(false); };
 
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-display font-bold text-slate-900">Issue Management</h2>
-        <div className="flex gap-2">
-          {['All', 'Pending', 'In Progress', 'Resolved'].map(s => (
-            <button 
-              key={s} 
-              onClick={() => setFilter(s)}
-              className={cn("px-4 py-2 rounded-xl text-xs font-bold transition-all", filter === s ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-600")}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
+    <div>
+      <PageHeader eyebrow="Operations" title="Issue manager" subtitle="Triage, assign crews, move tickets forward and close them with photo proof."
+        actions={<Segmented label="Layout" value={mode} onChange={setMode} options={[{ value: 'table', label: 'Table', icon: <Table2 size={14} /> }, { value: 'board', label: 'Board', icon: <Columns3 size={14} /> }]} />} />
 
-      <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Issue</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Reporter</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Status</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Priority</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Team</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase text-slate-400">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filtered.map((i: any) => (
-                <tr key={i.id} className="hover:bg-slate-50/50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <img src={i.imageUrl || `https://picsum.photos/seed/${i.id}/100`} className="w-10 h-10 rounded-lg object-cover" referrerPolicy="no-referrer" />
-                      <div className="max-w-[200px]">
-                        <p className="text-sm font-bold text-slate-900 truncate">{i.description || 'No description'}</p>
-                        <p className="text-[10px] text-slate-500">{(i.locationAddress || 'Unknown').split(',')[0]}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-sm font-medium text-slate-600">{i.username}</td>
-                  <td className="px-6 py-4"><Badge variant={i.status === 'Resolved' || i.status === 'Confirmed Resolved' || i.status === 'Pending Citizen Confirmation' ? 'success' : i.status === 'Pending' ? 'warning' : 'info'}>{i.status}</Badge></td>
-                  <td className="px-6 py-4 border-none">
-                    <span className={cn("text-xs font-black uppercase", i.priority === 'Emergency' ? 'text-red-500' : i.priority === 'High' ? 'text-amber-500' : 'text-blue-500')}>
-                      {i.priority}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{i.assignedTeam || "Not Assigned"}</td>
-                  <td className="px-6 py-4">
-                    <button onClick={() => setSelectedIssue(i)} className="text-civic-primary hover:underline text-xs font-bold">Manage</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <Card className="p-3 sm:p-4">
+        <div className="flex flex-col gap-3">
+          <div className="relative flex-1">
+            <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" />
+            <Input type="search" aria-label="Search tickets" className="pl-9" placeholder="Search ticket ID, street, ward, reporter…" value={q} onChange={e => setQ(e.target.value)} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select aria-label="Status" value={stage} onChange={e => setStage(e.target.value as any)} className="h-9 w-[170px] py-0 text-[13px]">
+              <option value="all">All statuses</option>
+              {STAGES.map(s => <option key={s} value={s}>{s} ({stageCounts[s] || 0})</option>)}
+            </Select>
+            <Select aria-label="Category" value={cat} onChange={e => setCat(e.target.value)} className="h-9 w-[190px] py-0 text-[13px]">
+              <option value="all">All categories</option>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </Select>
+            <Select aria-label="Crew" value={team} onChange={e => setTeam(e.target.value)} className="h-9 w-[210px] py-0 text-[13px]">
+              <option value="all">All crews</option>
+              <option value="none">Unassigned</option>
+              {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </Select>
+            <Select aria-label="Sort" value={sort} onChange={e => setSort(e.target.value as Sort)} className="h-9 w-[160px] py-0 text-[13px]">
+              <option value="deadline">Deadline first</option>
+              <option value="newest">Newest</option>
+              <option value="upvotes">Most upvoted</option>
+            </Select>
+            <button onClick={() => setOverdueOnly(v => !v)} aria-pressed={overdueOnly}
+              className={cn('inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border px-3 text-[13px] font-semibold', overdueOnly ? 'border-danger bg-danger text-white' : 'border-line text-danger hover:bg-danger-soft')}>
+              <AlarmClockOff size={14} /> Overdue <span className="tabular-nums">{overdueCount}</span>
+            </button>
+          </div>
         </div>
       </Card>
 
-      {selectedIssue && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-md">
-          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl">
-            <div className="flex flex-col h-[80vh] overflow-y-auto">
-              <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white z-10">
-                <div className="flex items-center gap-2 text-sm text-slate-500 font-medium">
-                  <span className="bg-slate-100 p-1.5 rounded-lg"><MessageSquare size={16} /></span>
-                  Ticket ID: <span className="text-slate-900 font-bold">{selectedIssue.id}</span>
-                </div>
-                <button onClick={() => setSelectedIssue(null)} className="p-2 hover:bg-slate-100 rounded-full"><X size={20} /></button>
-              </div>
-
-              <div className="p-6 space-y-6">
-                <img src={selectedIssue.imageUrl} className="w-full h-64 object-cover rounded-2xl border border-slate-200" referrerPolicy="no-referrer" />
-                
-                <div className="space-y-4 text-sm">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Complaint Type</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium">{selectedIssue.category}</div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Department</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium flex items-center gap-2">
-                      <Building2 size={16} className="text-slate-400" />
-                      {selectedIssue.assignedTeam || 'Unassigned Department'}
-                    </div>
-                  </div>
-
-                  <div className="h-48 rounded-xl overflow-hidden border border-slate-200 relative">
-                    {/* Placeholder map view to prevent layout issues */}
-                    <div className="absolute inset-0 bg-slate-100 flex items-center justify-center">
-                      <div className="text-center">
-                        <MapPin size={32} className="mx-auto text-red-500 mb-2" />
-                        <p className="text-xs font-bold text-slate-500 max-w-[200px] truncate">{selectedIssue.locationAddress}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Division</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium">{selectedIssue.division || 'N/A'}</div>
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Prabhag</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium">{selectedIssue.prabhag || 'N/A'}</div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Description</label>
-                    <div className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 leading-relaxed min-h-[100px]">
-                      {selectedIssue.description}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Grievance Severity</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium">{selectedIssue.priority}</div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Complaint By</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium">{selectedIssue.username}</div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 mb-1">Email Id</label>
-                    <div className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium">{selectedIssue.userEmail || 'N/A'}</div>
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-slate-200">
-                  <h3 className="text-center font-bold text-slate-900 mb-4">Update Your Status</h3>
-                  <div className="flex flex-col gap-3">
-                    <button
-                      disabled={managementLoading}
-                      onClick={() => updateIssue(selectedIssue.id, { status: 'In Progress' })}
-                      className={cn(
-                        "w-full py-3.5 rounded-xl font-bold transition-all shadow-md",
-                        selectedIssue.status === 'In Progress' ? "bg-orange-500 text-white shadow-orange-500/20" : "bg-red-400 text-white hover:bg-red-500 shadow-red-400/20"
-                      )}
-                    >
-                      {managementLoading && selectedIssue.status !== 'In Progress' ? 'Updating...' : 'In-Progress'}
-                    </button>
-                    <button
-                      disabled={managementLoading}
-                      onClick={() => updateIssue(selectedIssue.id, { status: 'Resolved' })}
-                      className={cn(
-                        "w-full py-3.5 rounded-xl font-bold transition-all shadow-md",
-                        (selectedIssue.status === 'Resolved' || selectedIssue.status === 'Confirmed Resolved' || selectedIssue.status === 'Pending Citizen Confirmation') 
-                          ? "bg-emerald-600 text-white shadow-emerald-600/20" 
-                          : "bg-slate-800 text-white hover:bg-slate-900 shadow-slate-800/20"
-                      )}
-                    >
-                      {managementLoading && selectedIssue.status !== 'Resolved' ? 'Updating...' : 'Completed'}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-6 mt-6">
-
-                  {(selectedIssue.status !== 'Pending') && (
-                    <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 mb-6 mt-4">
-                      <label className="block text-xs font-bold text-emerald-700 uppercase mb-2 tracking-widest">Upload Resolution Proof (AI Verification)</label>
-                      <input 
-                        type="file" 
-                        accept="image/*" 
-                        disabled={managementLoading}
-                        onChange={handleAdminPhotoUpload}
-                        className="text-xs text-emerald-600 mb-2"
-                      />
-                      {adminResolutionImage && <img src={adminResolutionImage} className="w-full h-32 object-cover rounded-xl mt-2" />}
-                      <p className="text-[10px] text-emerald-700 mt-2">Upload a photo showing the fixed issue before clicking "Completed" to trigger AI verification.</p>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-2 tracking-widest">Assign Worker Team</label>
-                    <select 
-                      disabled={managementLoading}
-                      className="w-full px-4 py-3 rounded-2xl border border-slate-200 disabled:opacity-50"
-                      value={selectedIssue.assignedTeam || ""}
-                      onChange={(e) => updateIssue(selectedIssue.id, { assignedTeam: e.target.value })}
-                    >
-                      <option value="">Select a team</option>
-                      {teams.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="pt-6 border-t border-slate-100 mb-6">
-                    <h4 className="text-xs font-bold text-slate-400 uppercase mb-4 tracking-widest">Verification Status</h4>
-                    {selectedIssue.citizenVerification ? (
-                      <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[10px] font-bold text-slate-900">Reporter Vote</span>
-                          <Badge variant={selectedIssue.citizenVerification.vote === 'Resolved Properly' ? 'success' : 'danger'}>
-                            {selectedIssue.citizenVerification.vote}
-                          </Badge>
-                        </div>
-                        {selectedIssue.citizenVerification.comment && (
-                          <p className="text-[10px] text-slate-500 italic mb-2">"{selectedIssue.citizenVerification.comment}"</p>
-                        )}
-                        {selectedIssue.citizenVerification.verificationImage && (
-                          <img src={selectedIssue.citizenVerification.verificationImage} className="w-full h-24 object-cover rounded-xl" />
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-[10px] text-slate-400 italic">No reporter verification yet.</p>
-                    )}
-
-                    <div className="mt-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Community Feedback</span>
-                        <div className="flex gap-2">
-                          <span className="text-[10px] font-bold text-emerald-500">+{selectedIssue.voteCountResolved || 0}</span>
-                          <span className="text-[10px] font-bold text-red-500">-{selectedIssue.voteCountNotResolved || 0}</span>
-                        </div>
-                      </div>
-                      
-                      {selectedIssue.communityVotes && selectedIssue.communityVotes.length > 0 ? (
-                        <div className="max-h-40 overflow-y-auto space-y-2 pr-2">
-                          {selectedIssue.communityVotes.map((v: any, i: number) => (
-                            <div key={i} className="p-3 rounded-xl bg-slate-50 border border-slate-100 flex gap-3">
-                              <div className={cn("w-2 h-2 mt-1.5 rounded-full shrink-0", v.vote === 'Resolved' ? 'bg-emerald-500' : 'bg-red-500')} />
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[10px] text-slate-600 italic">"{v.comment || 'No comment provided'}"</p>
-                                {v.image && <img src={v.image} className="mt-2 w-20 h-12 object-cover rounded-lg" />}
+      <div className="mt-4">
+        {issuesError && !issues.length ? <ErrorState message={issuesError} onRetry={refresh} />
+          : issuesLoading ? <Card><RowSkeleton rows={8} /></Card>
+            : filtered.length === 0 ? (
+              <Card><EmptyState icon={<SearchX size={22} />} title="No tickets match" body="Adjust the filters to see more." action={filtersOn ? <Button variant="secondary" onClick={clear} leftIcon={<X size={14} />}>Clear filters</Button> : undefined} /></Card>
+            ) : mode === 'table' ? (
+              <Card className="overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[980px] text-sm">
+                    <thead className="bg-surface-muted/60">
+                      <tr className="text-left text-xs font-semibold text-fg-subtle">
+                        <th scope="col" className="px-4 py-3">Issue</th>
+                        <th scope="col" className="px-3 py-3">Status</th>
+                        <th scope="col" className="px-3 py-3">SLA</th>
+                        <th scope="col" className="px-3 py-3">Priority</th>
+                        <th scope="col" className="px-3 py-3">Crew</th>
+                        <th scope="col" className="px-3 py-3 text-right">Votes</th>
+                        <th scope="col" className="px-4 py-3 text-right">Reported</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line">
+                      {filtered.slice(0, 100).map(i => (
+                        <tr key={i.id} onClick={() => setSelected(i)} className="cursor-pointer hover:bg-surface-muted/70" tabIndex={0} onKeyDown={e => e.key === 'Enter' && setSelected(i)}>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              {i.imageUrl ? <img src={i.imageUrl} alt="" className="h-10 w-10 shrink-0 rounded-[var(--radius-sm)] object-cover" /> : <CategoryIcon category={i.category} size={40} />}
+                              <div className="min-w-0 max-w-[340px]">
+                                <p className="truncate font-semibold text-fg">{issueTitle(i)}</p>
+                                <p className="truncate text-xs text-fg-muted"><span className="font-mono">#{i.id}</span> · {i.category} · {i.ward || shortAddress(i.locationAddress)}</p>
                               </div>
                             </div>
+                          </td>
+                          <td className="px-3 py-3"><StatusChip issue={i} size="sm" /></td>
+                          <td className="px-3 py-3"><SlaBadge issue={i} size="sm" /></td>
+                          <td className="px-3 py-3"><span className={cn('text-xs font-semibold', i.priority === 'Emergency' ? 'text-danger' : i.priority === 'High' ? 'text-warning' : 'text-fg-muted')}>{i.priority || 'Normal'}</span></td>
+                          <td className="px-3 py-3 text-[13px] text-fg-muted"><span className="block max-w-[170px] truncate" title={teamName(teams, i.assignedTeam)}>{teamName(teams, i.assignedTeam)}</span></td>
+                          <td className="px-3 py-3 text-right tabular-nums text-fg-muted"><span className="inline-flex items-center gap-1"><ThumbsUp size={12} />{i.upvotes || 0}</span></td>
+                          <td className="px-4 py-3 text-right text-xs text-fg-muted whitespace-nowrap">{timeAgo(i.timestamp)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="border-t border-line px-4 py-2.5 text-xs text-fg-muted">{filtered.length} ticket{filtered.length === 1 ? '' : 's'}{filtered.length > 100 ? ' · showing first 100' : ''}</p>
+              </Card>
+            ) : (
+              <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
+                <div className="grid min-w-[1100px] grid-cols-5 gap-3">
+                  {STAGE_FLOW.map(s => {
+                    const col = filtered.filter(i => stageOf(i) === s);
+                    const Icon = STAGE_META[s].icon;
+                    return (
+                      <section key={s} aria-label={s} className="rounded-[var(--radius-lg)] border border-line bg-surface-muted/60 p-2">
+                        <header className="flex items-center justify-between px-2 py-2">
+                          <span className="flex items-center gap-2 text-[13px] font-semibold"><span className="grid h-6 w-6 place-items-center rounded-full text-white" style={{ background: STAGE_META[s].dot }}><Icon size={13} /></span>{s}</span>
+                          <span className="rounded-full bg-surface px-2 text-xs font-semibold tabular-nums text-fg-muted">{col.length}</span>
+                        </header>
+                        <div className="space-y-2 max-h-[calc(100vh-320px)] min-h-[200px] overflow-y-auto pr-0.5">
+                          {col.slice(0, 30).map((i, k) => (
+                            <motion.button key={i.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(k, 8) * 0.03 }}
+                              onClick={() => setSelected(i)} className="block w-full rounded-[var(--radius-md)] border border-line bg-surface p-3 text-left shadow-[var(--shadow-e1)] hover:border-line-strong">
+                              <div className="flex items-start gap-2.5">
+                                <CategoryIcon category={i.category} size={28} />
+                                <p className="min-w-0 flex-1 text-[13px] font-semibold leading-snug line-clamp-2">{issueTitle(i)}</p>
+                              </div>
+                              <p className="mt-2 truncate text-xs text-fg-muted">{i.ward || shortAddress(i.locationAddress)} · {teamName(teams, i.assignedTeam)}</p>
+                              <div className="mt-2 flex items-center justify-between"><SlaBadge issue={i} size="sm" /><span className="inline-flex items-center gap-1 text-xs text-fg-subtle"><ThumbsUp size={11} />{i.upvotes || 0}</span></div>
+                            </motion.button>
                           ))}
+                          {col.length === 0 && <p className="px-2 py-6 text-center text-xs text-fg-subtle">Nothing here</p>}
                         </div>
-                      ) : (
-                        <p className="text-[10px] text-slate-400 italic">No community feedback yet.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4">
-                    <button 
-                      onClick={() => {
-                        if (confirm('Flag this report as fake? The user may be blocked after 3 reports.')) {
-                          updateIssue(selectedIssue.id, { isFake: true, status: 'Closed' });
-                        }
-                      }}
-                      className="flex-1 py-3 px-4 border-2 border-red-100 text-red-600 rounded-2xl font-bold text-xs hover:bg-red-50"
-                    >
-                      Flag as Fake Report
-                    </button>
-                    <Button onClick={() => setSelectedIssue(null)} className="flex-1 rounded-2xl">Close</Button>
-                  </div>
+                      </section>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          </motion.div>
-        </div>
-      )}
-    </motion.div>
+            )}
+      </div>
+      <ManageIssueDrawer issue={selected} onClose={() => setSelected(null)} />
+    </div>
   );
-};
+}

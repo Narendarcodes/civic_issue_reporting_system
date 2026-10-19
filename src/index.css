@@ -1,104 +1,248 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import "@fontsource-variable/outfit";
+@import "@fontsource-variable/plus-jakarta-sans";
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Outfit", sans-serif;
+/* Class-based dark mode: <html class="dark"> (set before paint in index.html). */
+@custom-variant dark (&:where(.dark, .dark *));
 
-  /* Brand — one confident green, one calm accent. */
-  --color-civic-primary: #059669;        /* Emerald 600 */
-  --color-civic-primary-hover: #047857;  /* Emerald 700 */
-  --color-civic-secondary: #0284c7;      /* Sky 600 — used sparingly */
-  --color-civic-accent: #14b8a6;         /* Teal 500 — accent only */
-  --color-civic-danger: #e11d48;         /* Rose 600 — destructive only */
-  --color-civic-success: #059669;
+/* -------------------------------------------------------------------------
+   Semantic tokens. Components use these (bg-surface, text-fg, border-line…)
+   instead of raw palette values so light + dark stay in lock-step.
+   ------------------------------------------------------------------------- */
+:root {
+  --bg: #f6f8fa;
+  --surface: #ffffff;
+  --surface-muted: #f2f5f7;
+  --surface-sunken: #e9eef2;
+  --border: #e3e8ee;
+  --border-strong: #cfd7e0;
+  --text: #0f172a;
+  --text-muted: #526070;      /* 6.3:1 on white — AA for body text */
+  --text-subtle: #6b7686;     /* 4.6:1 on white — AA for small labels */
+  --brand: #059669;
+  --brand-strong: #047857;
+  --brand-soft: #e8f7f1;
+  --brand-fg: #ffffff;
+  --accent: #0d9488;
+  --danger: #e11d48;
+  --danger-soft: #fff1f3;
+  --warning: #b45309;
+  --warning-soft: #fff7e6;
+  --ring: rgba(5, 150, 105, 0.32);
+  --shadow-color: 16 24 40;
+  color-scheme: light;
+}
 
-  --color-surface-light: rgba(255, 255, 255, 0.85);
-  --color-surface-dark: rgba(15, 23, 42, 0.9);
+.dark {
+  --bg: #0b1220;
+  --surface: #111a2b;
+  --surface-muted: #162135;
+  --surface-sunken: #1c2940;
+  --border: #233149;
+  --border-strong: #31415e;
+  --text: #e8eef6;
+  --text-muted: #a3b1c4;      /* 7.6:1 on surface */
+  --text-subtle: #8796ab;     /* 5.3:1 on surface */
+  --brand: #10b981;
+  --brand-strong: #34d399;
+  --brand-soft: rgba(16, 185, 129, 0.12);
+  --brand-fg: #04261b;
+  --accent: #2dd4bf;
+  --danger: #fb7185;
+  --danger-soft: rgba(251, 113, 133, 0.12);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --ring: rgba(16, 185, 129, 0.4);
+  --shadow-color: 0 0 0;
+  color-scheme: dark;
+}
 
+@theme inline {
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit Variable", "Plus Jakarta Sans Variable", ui-sans-serif, sans-serif;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+  --color-fg: var(--text);
+  --color-fg-muted: var(--text-muted);
+  --color-fg-subtle: var(--text-subtle);
+  --color-brand: var(--brand);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-fg: var(--brand-fg);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+
+  /* Legacy aliases kept so older class names still resolve. */
+  --color-civic-primary: var(--brand);
+  --color-civic-primary-hover: var(--brand-strong);
+  --color-civic-accent: var(--accent);
+  --color-civic-danger: var(--danger);
+
+  /* Radii — 3 steps only. */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
   --radius-card: 1.25rem;
+
+  /* Elevation — 3 steps. */
+  --shadow-e1: 0 1px 2px rgb(var(--shadow-color) / 0.05), 0 1px 3px rgb(var(--shadow-color) / 0.06);
+  --shadow-e2: 0 2px 4px rgb(var(--shadow-color) / 0.04), 0 12px 28px -12px rgb(var(--shadow-color) / 0.18);
+  --shadow-e3: 0 4px 8px rgb(var(--shadow-color) / 0.06), 0 28px 60px -20px rgb(var(--shadow-color) / 0.32);
+
+  /* Motion — 150–250 ms ease-out. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
 }
 
 @layer base {
-  html { color-scheme: light; }
-
+  html { -webkit-text-size-adjust: 100%; }
   body {
-    @apply bg-slate-50 text-slate-800 font-sans antialiased selection:bg-civic-primary/20 selection:text-civic-primary;
-    /* A single, restrained wash instead of a busy triple-gradient mesh. */
-    background-color: #f7f9fb;
-    background-image: radial-gradient(1200px 600px at 85% -12%, rgba(5, 150, 105, 0.06), transparent 60%);
-    background-attachment: fixed;
+    @apply bg-bg text-fg font-sans antialiased;
+    /* Plus Jakarta Sans ships a very narrow word space; open it up slightly for UI legibility. */
+    word-spacing: 0.06em;
     min-height: 100vh;
   }
+  h1, h2, h3, h4 { @apply font-display tracking-tight text-fg; word-spacing: normal; }
+  ::selection { background: var(--brand-soft); color: var(--brand-strong); }
 
-  h1, h2, h3, h4 { @apply font-display tracking-tight text-slate-900; }
-
-  /* One consistent, accessible focus ring across every interactive element. */
-  :where(button, a, input, textarea, select, [tabindex]):focus-visible {
-    outline: none;
-    @apply ring-4 ring-civic-primary/25;
+  :where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 0.5rem;
   }
 
-  /* Quiet, modern scrollbars. */
-  * { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-  ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb {
-    @apply bg-slate-300 rounded-full;
-    border: 2px solid transparent;
-    background-clip: padding-box;
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
   }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
 }
 
 @layer components {
-  /* Default surface: clean, solid, composed. The app's workhorse card. */
-  .glass-panel {
-    @apply bg-white border border-slate-200/70 rounded-[var(--radius-card)] transition-all duration-300
-           shadow-[0_1px_2px_rgba(16,24,40,0.04),0_10px_28px_-14px_rgba(16,24,40,0.14)];
+  /* Solid card surface — the workhorse. */
+  .glass-panel, .card {
+    @apply bg-surface border border-line rounded-[var(--radius-card)] shadow-[var(--shadow-e1)];
   }
-  .glass-panel:hover {
-    @apply border-slate-200
-           shadow-[0_2px_4px_rgba(16,24,40,0.05),0_18px_44px_-18px_rgba(16,24,40,0.22)];
-  }
+  .card-hover { @apply transition-[box-shadow,border-color,transform] duration-200 ease-out hover:shadow-[var(--shadow-e2)] hover:border-line-strong; }
 
-  /* True frosted glass — reserved for sticky headers and modal overlays only. */
+  /* True frosted glass — sticky headers and overlays only. */
   .glass-overlay {
-    @apply bg-white/80 backdrop-blur-xl border border-white/60 rounded-[var(--radius-card)]
-           shadow-[0_8px_30px_rgba(16,24,40,0.08)];
+    @apply bg-surface/80 backdrop-blur-xl border border-line/70;
   }
 
   .modern-input {
-    @apply w-full px-4 py-3.5 rounded-xl border border-slate-200 bg-white outline-none
-           focus:ring-4 focus:ring-civic-primary/15 focus:border-civic-primary
-           transition-all duration-200 text-sm font-medium text-slate-800
-           placeholder:text-slate-400 shadow-sm hover:border-slate-300;
+    @apply w-full px-3.5 py-2.5 rounded-[var(--radius-md)] border border-line bg-surface text-sm text-fg
+           placeholder:text-fg-subtle shadow-[var(--shadow-e1)] outline-none
+           transition-[border-color,box-shadow] duration-150
+           hover:border-line-strong focus:border-brand focus:ring-4 focus:ring-[var(--ring)]
+           disabled:opacity-60 disabled:cursor-not-allowed;
   }
+
+  .label { @apply block text-[13px] font-semibold text-fg mb-1.5; }
+  .hint { @apply text-xs text-fg-muted mt-1.5; }
+  .eyebrow { @apply text-[11px] font-bold uppercase tracking-[0.12em] text-fg-subtle; }
 
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl
-           bg-civic-primary text-white font-semibold tracking-tight
-           shadow-sm shadow-civic-primary/20
-           hover:bg-civic-primary-hover hover:shadow-md hover:shadow-civic-primary/25
-           transition-all duration-200 active:scale-[0.98]
-           disabled:opacity-50 disabled:pointer-events-none;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-[var(--radius-md)]
+           bg-brand text-brand-fg text-sm font-semibold shadow-[var(--shadow-e1)]
+           hover:bg-brand-strong transition-[background-color,box-shadow,transform] duration-150 ease-out
+           active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-[var(--radius-md)]
+           bg-surface border border-line text-fg text-sm font-semibold shadow-[var(--shadow-e1)]
+           hover:bg-surface-muted hover:border-line-strong transition-[background-color,border-color,transform] duration-150 ease-out
+           active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
   }
 
-  .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl
-           bg-white border border-slate-200 text-slate-700 font-semibold tracking-tight
-           shadow-sm hover:bg-slate-50 hover:border-slate-300
-           transition-all duration-200 active:scale-[0.98]
-           disabled:opacity-50 disabled:pointer-events-none;
+  .skeleton {
+    @apply rounded-[var(--radius-sm)] bg-surface-sunken;
+    background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 0.45) 50%, transparent 100%);
+    background-size: 400px 100%;
+    background-repeat: no-repeat;
+    animation: var(--animate-shimmer);
   }
+  .dark .skeleton { background-image: linear-gradient(90deg, transparent 0, rgb(255 255 255 / 0.06) 50%, transparent 100%); }
+
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 }
 
-/* Map: match the app's radius and give markers real depth. */
+/* ---------------------------------------------------------------- Leaflet */
 .leaflet-container {
   width: 100%;
   height: 100%;
-  border-radius: var(--radius-card);
-  z-index: 10;
-  font-family: "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-sans);
+  background: var(--surface-sunken);
+  z-index: 0;
 }
-.leaflet-popup-content-wrapper { border-radius: 0.75rem; box-shadow: 0 10px 30px rgba(16, 24, 40, 0.18); }
-.leaflet-marker-icon { filter: drop-shadow(0 4px 6px rgba(16, 24, 40, 0.28)); }
+.leaflet-popup-content-wrapper {
+  border-radius: 0.875rem;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-e3);
+  border: 1px solid var(--border);
+}
+.leaflet-popup-content { margin: 12px 14px; }
+.leaflet-popup-tip { background: var(--surface); }
+.leaflet-control-zoom a {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-control-attribution {
+  background: color-mix(in srgb, var(--surface) 85%, transparent) !important;
+  color: var(--text-subtle) !important;
+  font-size: 10px;
+}
+.leaflet-control-attribution a { color: var(--text-muted) !important; }
+
+/* Tile tinting: calmer light tiles, re-tinted dark tiles for dark mode. */
+.civic-tiles { filter: saturate(0.75) contrast(0.97); }
+.civic-tiles-dark { filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.55); }
+
+/* Category pin markers (see components/map/markers.ts) */
+.civic-pin { background: transparent; border: 0; }
+.civic-pin__body {
+  width: 34px; height: 34px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+  display: grid; place-items: center; border: 2px solid #fff;
+  box-shadow: 0 6px 14px -4px rgb(16 24 40 / 0.45);
+}
+.civic-pin__body svg { transform: rotate(45deg); width: 16px; height: 16px; color: #fff; }
+.civic-pin--overdue .civic-pin__body { outline: 3px solid rgb(225 29 72 / 0.55); outline-offset: 1px; }
+.civic-pin--selected .civic-pin__body { transform: rotate(-45deg) scale(1.15); }
+
+/* Marker clusters */
+.civic-cluster { background: transparent; border: 0; }
+.civic-cluster__ring {
+  width: 100%; height: 100%; border-radius: 9999px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--brand) 22%, transparent);
+}
+.civic-cluster__core {
+  width: 72%; height: 72%; border-radius: 9999px; display: grid; place-items: center;
+  background: var(--brand); color: #fff; font: 700 13px/1 var(--font-sans);
+  box-shadow: 0 6px 16px -6px rgb(5 150 105 / 0.7);
+}
+.dark .civic-cluster__core { color: #04261b; }
+.leaflet-cluster-anim .leaflet-marker-icon, .leaflet-cluster-anim .leaflet-marker-shadow {
+  transition: transform 0.25s ease-out, opacity 0.25s ease-out;
+}

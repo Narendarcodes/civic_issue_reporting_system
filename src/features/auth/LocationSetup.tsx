@@ -1,194 +1,100 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { User, MapPin, Search } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import '../../lib/leafletSetup';
-import { Area } from 'recharts';
-import { apiFetch, safeJson } from '../../lib/utils';
+import { LocateFixed, Search, MapPin, ArrowRight } from 'lucide-react';
+import { api, coordLabel, reverseGeocode, searchAddress } from '../../lib/api';
+import { WARDS, nearestWard } from '../../lib/civic';
+import { cn } from '../../lib/utils';
+import { Logo } from '../../components/ui/Logo';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Field';
 import { Card } from '../../components/ui/Card';
+import { BaseMap, Recenter, HYDERABAD } from '../../components/map/BaseMap';
+import { LocationPicker } from '../../components/map/LocationPicker';
 
-export const LocationSetup = ({ onComplete }: any) => {
-  const [address, setAddress] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const [preview, setPreview] = useState<{lat: number, lng: number}>({ lat: 17.3850, lng: 78.4867 });
+/** First-run (or profile) step: where should we show nearby issues from? */
+export function LocationSetup({ user, onComplete, embedded }: { user: any; onComplete: () => void; embedded?: boolean }) {
+  const [pos, setPos] = useState<[number, number]>(user?.latitude != null ? [user.latitude, user.longitude] : HYDERABAD);
+  const [address, setAddress] = useState<string>(user?.locationAddress || '');
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState<'gps' | 'search' | 'save' | null>(null);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    detectLocation();
-  }, []);
-
-  const detectLocation = () => {
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const { latitude, longitude } = pos.coords;
-      setPreview({ lat: latitude, lng: longitude });
-      try {
-        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`, {
-          headers: { 'User-Agent': 'CivicConnect-App' }
-        });
-        const data = await safeJson(res);
-        if (data && data.display_name) {
-          setAddress(data.display_name);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLocating(false);
-      }
-    }, (err) => {
-      console.error(err);
-      setLocating(false);
-    }, { enableHighAccuracy: true });
+  const move = (lat: number, lng: number) => {
+    setPos([lat, lng]);
+    setAddress(coordLabel(lat, lng));
+    reverseGeocode(lat, lng).then(a => a && setAddress(a));
   };
 
-  const searchAddress = async () => {
-    if (!address) return;
-    setLocating(true);
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`, {
-        headers: { 'User-Agent': 'CivicConnect-App' }
-      });
-      const data = await safeJson(res);
-      if (data && data.length > 0) {
-        const { lat, lon, display_name } = data[0];
-        const newLat = parseFloat(lat);
-        const newLng = parseFloat(lon);
-        setPreview({ lat: newLat, lng: newLng });
-        setAddress(display_name);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLocating(false);
-    }
-  };
-
-  const handleSetup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    try {
-      const res = await apiFetch('/api/user/location', {
-        method: 'PUT',
-        body: JSON.stringify({
-          locationAddress: address,
-          latitude: preview.lat,
-          longitude: preview.lng
-        })
-      });
-      if (res.ok) {
-        onComplete();
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const MapUpdater = ({ center }: { center: [number, number] }) => {
-    const map = useMap();
-    useEffect(() => {
-      map.setView(center, map.getZoom());
-    }, [center]);
-    return null;
-  };
-
-  const DraggableMarker = () => {
-    const markerRef = React.useRef<any>(null);
-    const eventHandlers = useMemo(() => ({
-      dragend() {
-        const marker = markerRef.current;
-        if (marker != null) {
-          const newPos = marker.getLatLng();
-          setPreview({ lat: newPos.lat, lng: newPos.lng });
-          fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${newPos.lat}&lon=${newPos.lng}`, {
-            headers: { 'User-Agent': 'CivicConnect-App' }
-          })
-          .then(safeJson)
-          .then(data => setAddress(data?.display_name || ''))
-          .catch(console.error);
-        }
-      },
-    }), []);
-
-    return (
-      <Marker
-        draggable={true}
-        eventHandlers={eventHandlers}
-        position={[preview.lat, preview.lng]}
-        ref={markerRef}>
-        <Popup minWidth={90}>
-          <span>Drag to your exact home location</span>
-        </Popup>
-      </Marker>
+  const detect = () => {
+    if (!navigator.geolocation) return setError('Location isn’t available — pick your area below or search.');
+    setBusy('gps');
+    navigator.geolocation.getCurrentPosition(
+      p => { move(p.coords.latitude, p.coords.longitude); setBusy(null); setError(''); },
+      () => { setBusy(null); setError('Location permission was denied. Pick your area below or search.'); },
+      { enableHighAccuracy: true, timeout: 10000 },
     );
   };
+  useEffect(() => { if (user?.latitude == null) detect(); }, []);
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-      <Card className="max-w-lg w-full">
-        <h2 className="text-2xl font-display font-bold text-slate-900 mb-2">Set Your Location</h2>
-        <p className="text-slate-500 mb-6">We use your location to show you civic issues and alerts in your immediate neighborhood.</p>
-        
-        <form onSubmit={handleSetup} className="space-y-6">
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-sm font-medium text-slate-700">Home Address / Area</label>
-              <button 
-                type="button" 
-                onClick={detectLocation}
-                className="text-xs font-bold text-civic-primary hover:underline flex items-center gap-1"
-                disabled={locating}
-              >
-                <MapPin size={12} />
-                {locating ? 'Detecting...' : 'Detect My Location'}
-              </button>
-            </div>
-            <div className="relative flex gap-2">
-              <div className="relative flex-1">
-                <MapPin className="absolute left-3 top-3 text-slate-400" size={20} />
-                <input 
-                  type="text" 
-                  required
-                  placeholder="e.g. 123 Main St, Jubilee Hills"
-                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-civic-primary"
-                  value={address}
-                  onChange={e => setAddress(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), searchAddress())}
-                />
-              </div>
-              <Button type="button" onClick={searchAddress} disabled={locating} className="px-6">
-                Search
-              </Button>
-            </div>
-          </div>
+  const search = async () => {
+    if (!q.trim()) return;
+    setBusy('search');
+    const r = await searchAddress(/hyderabad/i.test(q) ? q : `${q}, Hyderabad`);
+    setBusy(null);
+    if (!r) return setError('No match — try a landmark or pick an area chip.');
+    setError(''); setPos([r.lat, r.lng]); setAddress(r.label);
+  };
 
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-64 rounded-xl overflow-hidden border border-slate-200">
-            <MapContainer 
-              center={[
-                parseFloat(preview.lat as any) || 17.3850, 
-                parseFloat(preview.lng as any) || 78.4867
-              ]} 
-              zoom={15} 
-              style={{ height: '100%' }}
-            >
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <MapUpdater 
-                center={[
-                  parseFloat(preview.lat as any) || 17.3850, 
-                  parseFloat(preview.lng as any) || 78.4867
-                ]} 
-              />
-              <DraggableMarker />
-            </MapContainer>
-          </motion.div>
+  const save = async () => {
+    setBusy('save');
+    try {
+      await api('/api/user/location', { method: 'PUT', body: { locationAddress: address || `${nearestWard(pos[0], pos[1])}, Hyderabad`, latitude: pos[0], longitude: pos[1] } });
+      onComplete();
+    } catch (e: any) {
+      setError(e.message); setBusy(null);
+    }
+  };
 
-          <Button type="submit" disabled={loading} className="w-full py-3">
-            {loading ? 'Locating...' : 'Confirm Location'}
-          </Button>
-        </form>
-      </Card>
+  const body = (
+    <div className={cn(embedded ? 'p-5' : 'p-6 sm:p-8')}>
+      {!embedded && <>
+        <p className="eyebrow">One last step</p>
+        <h1 className="mt-1 text-2xl font-semibold">Where's your neighbourhood?</h1>
+        <p className="mt-1.5 text-sm text-fg-muted">We use it to show issues near you and to rank your ward. You can change it anytime.</p>
+      </>}
+      <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+        <div className="relative flex-1">
+          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" />
+          <Input aria-label="Search your area" className="pl-9" placeholder="Search area or landmark" value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), search())} />
+        </div>
+        <Button variant="secondary" onClick={search} loading={busy === 'search'}>Search</Button>
+        <Button variant="secondary" onClick={detect} loading={busy === 'gps'} leftIcon={<LocateFixed size={16} />}>Detect</Button>
+      </div>
+      <div className="mt-3 -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 no-scrollbar" role="group" aria-label="Popular areas">
+        {WARDS.slice(0, 9).map(w => (
+          <button key={w.name} onClick={() => { setPos([w.lat, w.lng]); setAddress(`${w.name}, Hyderabad, Telangana`); }}
+            className={cn('h-8 shrink-0 rounded-full border px-3 text-[13px] font-semibold', nearestWard(pos[0], pos[1]) === w.name ? 'border-brand bg-brand-soft text-brand-strong' : 'border-line text-fg-muted hover:border-line-strong')}>
+            {w.name}
+          </button>
+        ))}
+      </div>
+      <BaseMap center={pos} zoom={15} className="mt-3 h-64 sm:h-72 rounded-[var(--radius-lg)] border border-line" label="Your area">
+        <Recenter center={pos} />
+        <LocationPicker position={pos} onChange={move} category="Other" />
+      </BaseMap>
+      <p className="mt-3 flex items-start gap-2 text-[13px] text-fg-muted"><MapPin size={15} className="mt-0.5 shrink-0 text-brand" /><span className="line-clamp-2">{address || 'Drag the pin to your street'}</span></p>
+      {error && <p role="alert" className="mt-3 text-[13px] font-medium text-danger">{error}</p>}
+      <Button size="lg" className="mt-5 w-full" onClick={save} loading={busy === 'save'}>{embedded ? 'Save area' : 'Continue'} <ArrowRight size={16} /></Button>
     </div>
   );
-};
+
+  if (embedded) return body;
+  return (
+    <div className="min-h-screen bg-bg px-4 py-8 sm:py-14">
+      <div className="mx-auto max-w-xl">
+        <div className="mb-6"><Logo /></div>
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}><Card className="overflow-hidden">{body}</Card></motion.div>
+      </div>
+    </div>
+  );
+}

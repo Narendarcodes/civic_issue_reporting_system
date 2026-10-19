@@ -1,362 +1,218 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { User, Bell, ChevronRight, ChevronDown, Eye, Clock, MapPin, Camera } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
+import {
+  Camera, MapPin, ThumbsUp, ShieldCheck, ArrowRight, Timer, Copy, MapPinned, Sparkles, Building2, CheckCircle2, Github, Database, Menu, X,
+} from 'lucide-react';
+import { APP_NAME } from '../../lib/civic';
+import { Logo } from '../../components/ui/Logo';
+import { ThemeToggle } from '../../components/ui/ThemeToggle';
+import { cn } from '../../lib/utils';
 
-export const WelcomeScreen = ({ onLogin, onRegister }: any) => {
-  const navigate = useNavigate();
-  const [stats, setStats] = useState({ total: 0, resolved: 0, inProgress: 0, pending: 0 });
+const fade = (d = 0) => ({ initial: { opacity: 0, y: 14 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, margin: '-60px' }, transition: { duration: 0.25, delay: d, ease: [0.22, 1, 0.36, 1] as any } });
 
+const STEPS = [
+  { icon: Camera, title: 'Snap', body: 'Take a photo of the pothole, garbage pile or dead streetlight. GPS is read straight from the photo.' },
+  { icon: MapPin, title: 'Pin & send', body: 'Confirm the exact spot on the map and pick a category. Under a minute, start to finish.' },
+  { icon: ThumbsUp, title: 'Neighbours verify', body: 'People nearby upvote instead of duplicating. Three confirmations and it’s verified.' },
+  { icon: ShieldCheck, title: 'Fixed — with proof', body: 'Crews close tickets with an after photo. You confirm the fix, or reopen it.' },
+];
+const FEATURES = [
+  { icon: Timer, title: 'Public fix-by deadlines', body: 'Every category has an SLA. Each report shows a live countdown, and anything late lands on the city’s overdue wall.' },
+  { icon: Copy, title: 'No more duplicate reports', body: 'Reporting the same pothole twice? We show the existing ticket within 100 m and let you upvote it instead.' },
+  { icon: MapPinned, title: 'Ward scorecards', body: 'Resolution rate, time to fix and missed deadlines for every area — computed live from public data.' },
+  { icon: Sparkles, title: 'Before/after closure proof', body: 'Crews must upload an after photo. With Gemini configured, AI compares both; otherwise it’s queued for manual review.' },
+];
+
+export function WelcomeScreen() {
+  const [stats, setStats] = useState<{ total: number; resolved: number; citizens?: number; avgResolutionHours?: number | null } | null>(null);
+  const [menu, setMenu] = useState(false);
   useEffect(() => {
-    fetch('/api/public/stats')
-      .then(res => res.json())
-      .then(data => {
-        if (data && typeof data.total === 'number') {
-          setStats(data);
-        }
-      })
-      .catch(console.error);
+    fetch('/api/public/stats').then(r => (r.ok ? r.json() : null)).then(d => d && typeof d.total === 'number' && setStats(d)).catch(() => {});
   }, []);
-
-  const resolutionRate = stats.total > 0 ? Math.round((stats.resolved / stats.total) * 100) : 0;
+  const rate = stats && stats.total ? Math.round((stats.resolved / stats.total) * 100) : null;
 
   return (
-    <div className="min-h-screen bg-[#F4FAF7] font-sans text-slate-800 overflow-x-hidden">
-      {/* Navbar */}
-      <nav className="flex items-center justify-between px-8 py-4 bg-white shadow-sm sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-[#00A86B] rounded-lg flex items-center justify-center text-white font-bold text-lg">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
-          </div>
-          <span className="font-bold text-xl tracking-tight text-slate-900">Civic Report</span>
-        </div>
-        <div className="hidden md:flex items-center gap-8 font-semibold text-sm text-slate-600">
-          <a href="#" className="text-[#00A86B]">Home</a>
-          <a href="#" className="hover:text-[#00A86B] transition-colors" onClick={(e) => { e.preventDefault(); onRegister(); }}>Report Issue</a>
-        </div>
-        <div className="flex items-center gap-4">
-          <button className="flex items-center gap-1 text-xs font-bold text-slate-700 bg-slate-100 px-3 py-2 rounded-md hover:bg-slate-200 transition-colors">
-            🌐 EN <ChevronDown size={14} />
-          </button>
-          <button onClick={() => navigate('/user')} className="text-slate-700 px-5 py-2.5 rounded-lg font-bold text-sm transition-colors hover:bg-slate-50">
-            Login
-          </button>
-          <button onClick={() => onRegister()} className="bg-[#00A86B] hover:bg-[#008f5a] text-white px-5 py-2.5 rounded-lg font-bold text-sm transition-colors shadow-md shadow-[#00A86B]/20">
-            Sign Up
-          </button>
-        </div>
-      </nav>
-
-      {/* Hero / Timeline Section */}
-      <div className="pt-12 pb-16 px-6 max-w-6xl mx-auto">
-        {/* Mobile Login Buttons */}
-        <div className="flex md:hidden justify-center mb-12">
-          <div className="text-center flex flex-col items-center">
-            <p className="text-slate-500 font-semibold mb-4 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100 inline-block text-sm">Before login, read the flow below or skip to login 👇</p>
-            <div className="flex flex-col w-full gap-3">
-              <button onClick={() => navigate('/user')} className="flex items-center justify-center gap-2 bg-[#00A86B] hover:bg-[#008f5a] text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-lg shadow-[#00A86B]/20 w-full">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                Citizen Portal
-                <ChevronRight size={18} />
-              </button>
-              <button onClick={() => navigate('/admin')} className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 px-6 py-3 rounded-xl font-bold transition-colors shadow-sm w-full">
-                <Eye size={18} className="text-slate-500" />
-                Admin Portal
-              </button>
-            </div>
+    <div className="min-h-screen bg-bg text-fg overflow-x-hidden">
+      {/* Nav */}
+      <header className="sticky top-0 z-50 glass-overlay border-x-0 border-t-0">
+        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-5">
+          <a href="/" aria-label={`${APP_NAME} home`}><Logo /></a>
+          <nav className="hidden md:flex items-center gap-6 text-sm font-semibold text-fg-muted" aria-label="Sections">
+            <a href="#how" className="hover:text-fg">How it works</a>
+            <a href="#proof" className="hover:text-fg">Proof</a>
+            <a href="#features" className="hover:text-fg">Features</a>
+            <a href="#cities" className="hover:text-fg">For cities</a>
+          </nav>
+          <div className="ml-auto flex items-center gap-2">
+            <ThemeToggle />
+            <a href="/admin" className="hidden sm:inline-flex h-9 items-center rounded-[var(--radius-md)] px-3 text-sm font-semibold text-fg-muted hover:bg-surface-muted hover:text-fg">Officer login</a>
+            <a href="/user" className="btn-primary hidden sm:inline-flex h-9 py-0">Report an issue</a>
+            <button className="md:hidden grid h-9 w-9 place-items-center rounded-full hover:bg-surface-muted" aria-label="Menu" aria-expanded={menu} onClick={() => setMenu(m => !m)}>{menu ? <X size={18} /> : <Menu size={18} />}</button>
           </div>
         </div>
+        {menu && (
+          <nav className="md:hidden border-t border-line px-5 py-3 space-y-1 text-sm font-semibold" aria-label="Mobile">
+            {[['#how', 'How it works'], ['#proof', 'Proof'], ['#features', 'Features'], ['#cities', 'For cities'], ['/admin', 'Officer login']].map(([h, l]) => (
+              <a key={h} href={h} onClick={() => setMenu(false)} className="block rounded-[var(--radius-md)] px-3 py-2.5 text-fg-muted hover:bg-surface-muted">{l}</a>
+            ))}
+          </nav>
+        )}
+      </header>
 
-        <div className="max-w-4xl mx-auto relative text-center">
-          {/* Vertical Line */}
-          <div className="absolute left-8 top-0 bottom-0 w-1 bg-[#00A86B]/20 rounded-full md:left-1/2 md:-ml-0.5" />
+      {/* Hero */}
+      <section className="relative">
+        <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_420px_at_80%_-10%,color-mix(in_srgb,var(--brand)_16%,transparent),transparent_70%)]" />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pt-12 pb-16 lg:grid-cols-[1fr_1.15fr] lg:pt-20 lg:pb-24">
+          <div>
+            <motion.span {...fade()} className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-semibold text-fg-muted shadow-[var(--shadow-e1)]">
+              <span className="h-1.5 w-1.5 rounded-full bg-brand" /> Live in Hyderabad · free for citizens
+            </motion.span>
+            <motion.h1 {...fade(0.04)} className="mt-5 text-[42px] leading-[1.04] sm:text-[56px] font-semibold tracking-tight">
+              Report it.<br />Track it.<br /><span className="text-brand">Get it fixed.</span>
+            </motion.h1>
+            <motion.p {...fade(0.08)} className="mt-5 max-w-lg text-[17px] leading-relaxed text-fg-muted">
+              {APP_NAME} turns a photo of a pothole, garbage pile or broken streetlight into a public ticket with a GPS pin, a fix-by deadline and before/after proof when it's done.
+            </motion.p>
+            <motion.div {...fade(0.12)} className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a href="/user" className="btn-primary h-12 px-6 text-[15px]"><Camera size={18} />Report an issue</a>
+              <a href="#how" className="btn-secondary h-12 px-6 text-[15px]">See how it works <ArrowRight size={16} /></a>
+            </motion.div>
+            <motion.dl {...fade(0.16)} className="mt-10 grid max-w-md grid-cols-3 gap-4 border-t border-line pt-6">
+              {[
+                [stats ? stats.total.toLocaleString('en-IN') : '—', 'issues reported'],
+                [rate !== null ? `${rate}%` : '—', 'resolved'],
+                [stats?.avgResolutionHours ? `${stats.avgResolutionHours} h` : '—', 'avg. time to fix'],
+              ].map(([v, l]) => (
+                <div key={l}><dt className="sr-only">{l}</dt><dd className="font-display text-[26px] font-semibold tabular-nums">{v}</dd><p className="text-xs text-fg-muted">{l}</p></div>
+              ))}
+            </motion.dl>
+          </div>
 
-          {/* Step 1 */}
-          <div className="relative flex flex-col md:flex-row items-start mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-[#00A86B] text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">1</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pr-12 text-left md:text-right">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Citizen Reports an Issue</h3>
-                <p className="text-slate-600 mb-2">The citizen logs into the portal and reports a civic issue by providing:</p>
-                <ul className="text-slate-500 font-medium space-y-1 text-sm inline-block text-left">
-                  <li>• Issue description</li>
-                  <li>• Location</li>
-                  <li>• Photos/Videos (optional)</li>
-                </ul>
-                <p className="text-slate-600 mt-2 font-medium">The issue is published in the Community Feed.</p>
-                <img src="/citizen_reporting.png" alt="Citizen reporting an issue" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
+          {/* Product visual: real screenshots of the app */}
+          <motion.div {...fade(0.1)} className="relative">
+            <div className="relative overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface shadow-[var(--shadow-e3)]">
+              <div className="flex items-center gap-1.5 border-b border-line bg-surface-muted px-3 py-2.5" aria-hidden>
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-400" /><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                <span className="ml-3 h-5 flex-1 max-w-[260px] rounded-full bg-surface text-[10px] leading-5 px-3 text-fg-subtle">civisnap.app/admin</span>
               </div>
+              <img src="/landing/hero-admin.png" alt={`${APP_NAME} admin console: city overview with live complaint map, overdue wall and KPIs`} className="block w-full" />
             </div>
-            {/* Desktop Login Buttons */}
-            <div className="hidden md:flex md:w-1/2 md:pl-12 flex-col items-end pt-4">
-              <p className="text-slate-500 font-semibold mb-4 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100 inline-block text-sm">Before login, read the flow below or skip to login 👇</p>
-              <div className="flex flex-col sm:flex-row items-center justify-end gap-3 w-full">
-                <button onClick={() => navigate('/user')} className="flex items-center justify-center gap-2 bg-[#00A86B] hover:bg-[#008f5a] text-white px-6 py-3 rounded-xl font-bold transition-colors shadow-lg shadow-[#00A86B]/20 w-full sm:w-auto">
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                  Citizen Portal
-                  <ChevronRight size={18} />
-                </button>
-                <button onClick={() => navigate('/admin')} className="flex items-center justify-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 px-6 py-3 rounded-xl font-bold transition-colors shadow-sm w-full sm:w-auto">
-                  <Eye size={18} className="text-slate-500" />
-                  Admin Portal
-                </button>
-              </div>
+            <div className="absolute -bottom-10 -left-4 sm:-left-10 w-[34%] min-w-[150px] overflow-hidden rounded-[28px] border-[6px] border-slate-900 bg-slate-900 shadow-[var(--shadow-e3)]">
+              <img src="/landing/hero-mobile.png" alt={`${APP_NAME} citizen app on a phone: report stepper`} className="block w-full rounded-[22px]" />
             </div>
-          </div>
+            <div className="absolute -right-2 -top-6 sm:-right-6 hidden sm:flex items-center gap-3 rounded-[var(--radius-lg)] border border-line bg-surface p-3 pr-4 shadow-[var(--shadow-e3)]">
+              <img src="/demo/pothole-after.jpg" alt="" className="h-11 w-11 rounded-[var(--radius-sm)] object-cover" />
+              <div><p className="text-[13px] font-semibold">Pothole fixed in 41 h</p><p className="text-xs text-brand font-semibold flex items-center gap-1"><CheckCircle2 size={12} />Confirmed by 4 neighbours</p></div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
 
-          {/* Step 2 */}
-          <div className="relative flex flex-col md:flex-row items-start justify-end mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">2</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pl-12 text-left">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Community Voting</h3>
-                <p className="text-slate-600 mb-2">Citizens living in the same area can view reported issues and upvote issues that affect them. More votes indicate that the issue impacts more people.</p>
-                <p className="text-slate-600 mt-2">The system calculates a Priority Score based on:</p>
-                <ul className="text-slate-500 font-medium space-y-1 text-sm inline-block">
-                  <li>• Number of community votes</li>
-                  <li>• Severity of the issue</li>
-                  <li>• Time since the issue was reported (optional)</li>
-                </ul>
-                <img src="/step2_voting_1782795695974.png" alt="Community Voting" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
+      {/* How it works */}
+      <section id="how" className="border-y border-line bg-surface">
+        <div className="mx-auto max-w-6xl px-5 py-20">
+          <motion.p {...fade()} className="eyebrow">How it works</motion.p>
+          <motion.h2 {...fade(0.04)} className="mt-2 max-w-2xl text-3xl sm:text-4xl font-semibold">From photo to fixed, in four public steps.</motion.h2>
+          <ol className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {STEPS.map((s, k) => {
+              const Icon = s.icon;
+              return (
+                <motion.li key={s.title} {...fade(0.05 * k)} className="relative rounded-[var(--radius-xl)] border border-line bg-bg p-6">
+                  <span className="absolute right-5 top-5 font-display text-4xl font-semibold text-fg-subtle/25">{k + 1}</span>
+                  <span className="grid h-11 w-11 place-items-center rounded-[var(--radius-md)] bg-brand-soft text-brand"><Icon size={20} /></span>
+                  <h3 className="mt-5 text-lg font-semibold">{s.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-fg-muted">{s.body}</p>
+                </motion.li>
+              );
+            })}
+          </ol>
+        </div>
+      </section>
 
-          {/* Step 3 */}
-          <div className="relative flex flex-col md:flex-row items-start mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">3</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pr-12 text-left md:text-right">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Admin Dashboard</h3>
-                <p className="text-slate-600 mb-4">The admin logs into the portal and sees all reported issues in their jurisdiction. Issues are automatically sorted by Priority Score (highest priority first).</p>
-                
-                <div className="overflow-hidden rounded-xl border border-slate-200 text-left">
-                  <table className="w-full text-xs">
-                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Rank</th>
-                        <th className="px-3 py-2 text-left">Issue</th>
-                        <th className="px-3 py-2 text-right">Votes</th>
-                        <th className="px-3 py-2 text-right">Priority</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-600 font-medium bg-white">
-                      <tr><td className="px-3 py-2">1</td><td className="px-3 py-2">Water Pipeline Leakage</td><td className="px-3 py-2 text-right">320</td><td className="px-3 py-2 text-right text-red-500 font-bold">High</td></tr>
-                      <tr><td className="px-3 py-2">2</td><td className="px-3 py-2">Road Potholes</td><td className="px-3 py-2 text-right">275</td><td className="px-3 py-2 text-right text-red-500 font-bold">High</td></tr>
-                      <tr><td className="px-3 py-2">3</td><td className="px-3 py-2">Streetlight Not Working</td><td className="px-3 py-2 text-right">130</td><td className="px-3 py-2 text-right text-amber-500 font-bold">Medium</td></tr>
-                      <tr><td className="px-3 py-2">4</td><td className="px-3 py-2">Garbage Collection Delay</td><td className="px-3 py-2 text-right">75</td><td className="px-3 py-2 text-right text-amber-500 font-bold">Medium</td></tr>
-                      <tr><td className="px-3 py-2">5</td><td className="px-3 py-2">Broken Park Bench</td><td className="px-3 py-2 text-right">20</td><td className="px-3 py-2 text-right text-green-500 font-bold">Low</td></tr>
-                    </tbody>
-                  </table>
+      {/* Proof */}
+      <section id="proof" className="mx-auto max-w-6xl px-5 py-20">
+        <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.4fr]">
+          <div>
+            <motion.p {...fade()} className="eyebrow">Closure proof</motion.p>
+            <motion.h2 {...fade(0.04)} className="mt-2 text-3xl sm:text-4xl font-semibold">“Resolved” means a photo, not a checkbox.</motion.h2>
+            <motion.p {...fade(0.08)} className="mt-4 text-[15px] leading-relaxed text-fg-muted">Crews close a ticket by uploading an after photo from the same spot. The reporter gets the final word, and neighbours can verify too. No more tickets closed from an office chair.</motion.p>
+            <motion.ul {...fade(0.12)} className="mt-6 space-y-3 text-sm">
+              {['Before/after side by side on every closed issue', 'Reporter confirms or reopens with a photo', 'Optional Gemini check flags mismatched photos'].map(t => (
+                <li key={t} className="flex items-center gap-2.5"><CheckCircle2 size={17} className="text-brand" />{t}</li>
+              ))}
+            </motion.ul>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[['pothole', 'Pothole · Madhapur', '41 h'], ['garbage', 'Garbage · Kukatpally', '19 h']].map(([k, label, t], i) => (
+              <motion.figure key={k} {...fade(0.06 * i)} className="overflow-hidden rounded-[var(--radius-xl)] border border-line bg-surface shadow-[var(--shadow-e2)]">
+                <div className="grid grid-cols-2">
+                  <div className="relative"><img src={`/demo/${k}-before.jpg`} alt={`${label} before`} className="aspect-[3/4] w-full object-cover" /><span className="absolute left-2 top-2 rounded-full bg-rose-600/90 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Before</span></div>
+                  <div className="relative"><img src={`/demo/${k}-after.jpg`} alt={`${label} after`} className="aspect-[3/4] w-full object-cover" /><span className="absolute left-2 top-2 rounded-full bg-emerald-600/90 px-2 py-0.5 text-[10px] font-bold uppercase text-white">After</span></div>
                 </div>
-                <img src="/step3_admin_1782795707685.png" alt="Admin Dashboard" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
-
-          {/* Step 4 */}
-          <div className="relative flex flex-col md:flex-row items-start justify-end mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">4</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pl-12 text-left">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Team Assignment</h3>
-                <p className="text-slate-600 mb-3">The admin assigns the highest-priority issue to the appropriate field team.</p>
-                <p className="text-slate-600 font-medium">Once assigned, the issue status changes to:</p>
-                <div className="mt-2 inline-block px-3 py-1 bg-amber-50 text-amber-600 rounded-full text-sm font-bold border border-amber-200">Status: Under Progress</div>
-                <img src="/step4_assignment_1782795719105.png" alt="Team Assignment" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
-
-          {/* Step 5 */}
-          <div className="relative flex flex-col md:flex-row items-start mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-amber-500 text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">5</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pr-12 text-left md:text-right">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Field Team Completes the Work</h3>
-                <p className="text-slate-600 mb-2">The field team resolves the issue and uploads proof of completion (photos, comments, etc.). The admin verifies the work.</p>
-                <p className="text-slate-600 font-medium mt-2">The issue status remains <span className="px-2 py-0.5 bg-amber-50 text-amber-600 rounded font-bold border border-amber-100 text-xs inline-block">Under Progress</span> until the citizen confirms.</p>
-                <img src="/step5_worker_1782795729199.png" alt="Field Team Completes the Work" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
-
-          {/* Step 6 */}
-          <div className="relative flex flex-col md:flex-row items-start justify-end mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">6</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pl-12 text-left">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Citizen Verification</h3>
-                <p className="text-slate-600 mb-2">The citizen who reported the issue receives a notification.</p>
-                <ul className="text-slate-500 font-medium space-y-1 text-sm inline-block">
-                  <li>• They inspect the work.</li>
-                  <li>• If satisfied, they click "Work Completed".</li>
-                </ul>
-                <img src="/step6_verification_1782795738607.png" alt="Citizen Verification" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
-
-          {/* Step 7 */}
-          <div className="relative flex flex-col md:flex-row items-start mb-12 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-[#00A86B] text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">7</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pr-12 text-left md:text-right">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Issue Closure</h3>
-                <p className="text-slate-600 mb-2 font-medium">The issue status changes to:</p>
-                <div className="mb-2 inline-block px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-sm font-bold border border-emerald-200">Status: Completed</div>
-                <p className="text-slate-600">The complaint is officially closed.</p>
-                <img src="/step7_closure_1782795747511.png" alt="Issue Closure" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
-
-          {/* Step 8 */}
-          <div className="relative flex flex-col md:flex-row items-start justify-end mb-16 group">
-            <div className="absolute left-8 md:left-1/2 w-8 h-8 rounded-full bg-purple-500 text-white flex items-center justify-center font-bold text-sm shadow-[0_0_0_8px_#F4FAF7] z-10 transform -translate-x-1/2 md:translate-x-[-50%] group-hover:scale-110 transition-transform">8</div>
-            <div className="ml-16 md:ml-0 md:w-1/2 md:pl-12 text-left">
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
-                <h3 className="text-xl font-bold mb-3 text-slate-800">Reward & Leaderboard</h3>
-                <ul className="text-slate-600 font-medium space-y-2 text-sm">
-                  <li>• The reporting citizen earns reward points.</li>
-                  <li>• Citizens who actively vote on genuine issues may also earn small participation points (optional).</li>
-                  <li>• The leaderboard is updated to encourage community participation.</li>
-                </ul>
-                <img src="/step8_reward_1782795757203.png" alt="Reward & Leaderboard" className="w-full rounded-xl mt-4 object-cover border border-slate-100 shadow-sm" />
-              </div>
-            </div>
-          </div>
-          
-        </div>
-        
-        {/* Complete Workflow Flowchart */}
-        <div className="bg-slate-900 rounded-[2rem] p-8 md:p-12 shadow-2xl text-center relative overflow-hidden mt-12 border border-slate-800">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[#00A86B]/10 rounded-bl-full blur-3xl"></div>
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/10 rounded-tr-full blur-3xl"></div>
-          
-          <h3 className="text-2xl font-bold text-white mb-8 relative z-10">Complete Workflow</h3>
-          <div className="inline-block text-left text-emerald-400 font-mono text-sm sm:text-base leading-loose whitespace-pre relative z-10 mx-auto">
-{`Citizen Reports Issue
-          │
-          ▼
-Issue Published in Community Feed
-          │
-          ▼
-Citizens Vote (Upvote Priority)
-          │
-          ▼
-Priority Score Calculated
-          │
-          ▼
-Admin Dashboard (Issues Sorted by Priority)
-          │
-          ▼
-Admin Assigns Field Team
-          │
-          ▼
-Status → Under Progress
-          │
-          ▼
-Field Team Resolves Issue
-          │
-          ▼
-Admin Verifies Work
-          │
-          ▼
-Citizen Confirms Completion
-          │
-          ▼
-Status → Completed
-          │
-          ▼
-Reward Points + Leaderboard Updated`}
+                <figcaption className="flex items-center justify-between px-4 py-3 text-[13px]"><span className="font-semibold">{label}</span><span className="text-brand font-semibold">Fixed in {t}</span></figcaption>
+              </motion.figure>
+            ))}
           </div>
         </div>
-        
-      </div>
+      </section>
 
-      {/* Hero Stats (Moved below CTA) */}
-      <div className="py-12 bg-white border-t border-slate-100">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-5xl mx-auto px-6">
-          <div className="bg-white p-6 rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-            <div className="text-4xl font-black text-[#00A86B] mb-2">{stats.total}</div>
-            <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">Total Reports</div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-            <div className="text-4xl font-black text-[#00A86B] mb-2">{stats.resolved}</div>
-            <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">Resolved</div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-            <div className="text-4xl font-black text-[#f05a1a] mb-2">{stats.inProgress}</div>
-            <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">In Progress</div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-slate-100 flex flex-col items-center justify-center transition-transform hover:-translate-y-1">
-            <div className="text-4xl font-black text-[#f59e0b] mb-2">{stats.pending}</div>
-            <div className="text-xs text-slate-500 font-bold uppercase tracking-widest">Pending</div>
+      {/* Features */}
+      <section id="features" className="border-y border-line bg-surface">
+        <div className="mx-auto max-w-6xl px-5 py-20">
+          <motion.p {...fade()} className="eyebrow">Built for accountability</motion.p>
+          <motion.h2 {...fade(0.04)} className="mt-2 max-w-2xl text-3xl sm:text-4xl font-semibold">Everything a city needs to be held to its word.</motion.h2>
+          <div className="mt-12 grid gap-5 sm:grid-cols-2">
+            {FEATURES.map((f, k) => {
+              const Icon = f.icon;
+              return (
+                <motion.div key={f.title} {...fade(0.04 * k)} className="flex gap-4 rounded-[var(--radius-xl)] border border-line bg-bg p-6">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[var(--radius-md)] bg-brand-soft text-brand"><Icon size={20} /></span>
+                  <div><h3 className="text-lg font-semibold">{f.title}</h3><p className="mt-1.5 text-sm leading-relaxed text-fg-muted">{f.body}</p></div>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
-      </div>
+      </section>
 
-      {/* Features Grid */}
-      <div className="bg-white py-24 px-6 border-t border-slate-100">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-6">
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+      {/* Impact + cities CTA */}
+      <section id="cities" className="mx-auto max-w-6xl px-5 py-20">
+        <motion.div {...fade()} className="relative overflow-hidden rounded-[28px] bg-emerald-950 px-6 py-14 text-white sm:px-14">
+          <img src="/demo/streetlight-after.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />
+          <div className="absolute inset-0 bg-gradient-to-r from-emerald-950 via-emerald-950/90 to-emerald-950/40" />
+          <div className="relative grid gap-10 lg:grid-cols-[1.3fr_1fr] lg:items-center">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-300">For GHMC & ward officers</p>
+              <h2 className="mt-3 text-3xl sm:text-4xl font-semibold text-white">One console for every complaint in the city.</h2>
+              <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-emerald-50/85">Clustered live map and heatmap, an overdue wall sorted by breach, kanban triage, crew assignment and analytics — with an open data API for journalists and researchers.</p>
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+                <a href="/admin" className="inline-flex h-12 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-white px-6 text-[15px] font-semibold text-emerald-900 hover:bg-emerald-50"><Building2 size={18} />Open the admin console</a>
+                <a href="/api/public/data" className="inline-flex h-12 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-white/30 px-6 text-[15px] font-semibold text-white hover:bg-white/10"><Database size={18} />Open data API</a>
+              </div>
             </div>
-            <h3 className="font-bold text-[#00A86B] mb-3 text-lg">Simple Reporting Form</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Quick and intuitive form to report any civic issue in just a few clicks.</p>
+            <dl className="grid grid-cols-2 gap-3">
+              {[
+                [stats ? stats.total : '—', 'Reports filed'],
+                [stats ? stats.resolved : '—', 'Fixed with proof'],
+                [stats?.citizens ?? '—', 'Active citizens'],
+                [rate !== null ? `${rate}%` : '—', 'Resolution rate'],
+              ].map(([v, l]) => (
+                <div key={l as string} className="rounded-[var(--radius-lg)] bg-white/10 p-5 ring-1 ring-white/15 backdrop-blur">
+                  <dd className="font-display text-3xl font-semibold tabular-nums text-white">{v}</dd><dt className="mt-1 text-xs text-emerald-100/80">{l}</dt>
+                </div>
+              ))}
+            </dl>
           </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <MapPin size={24} />
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Location & Photo</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Add precise location and photos for accurate issue identification and tracking.</p>
-          </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Status Tracking</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Monitor your report status from pending to resolved with live updates.</p>
-          </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <User size={24} />
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Admin Dashboard</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Comprehensive dashboard for authorities to manage and resolve issues.</p>
-          </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <Bell size={24} />
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Smart Notifications</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Get instant notifications when your reported issue status changes.</p>
-          </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <Camera size={24} />
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Before & After Proof</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Visual documentation showing the issue resolution with transparency.</p>
-          </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <Clock size={24} />
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Quick Response</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Automated routing ensures issues reach the right department immediately.</p>
-          </div>
-          <div className="bg-white p-8 rounded-3xl shadow-[0_2px_20px_-3px_rgba(0,0,0,0.05)] border border-slate-100 hover:border-[#00A86B]/30 transition-colors">
-            <div className="w-12 h-12 bg-[#e6f7f0] text-[#00A86B] rounded-xl flex items-center justify-center mb-6">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path></svg>
-            </div>
-            <h3 className="font-bold text-slate-800 mb-3 text-lg">Secure & Reliable</h3>
-            <p className="text-sm text-slate-500 font-medium leading-relaxed">Your data is protected with enterprise-grade security and privacy measures.</p>
-          </div>
+        </motion.div>
+      </section>
+
+      <footer className="border-t border-line">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-5 py-8 text-sm text-fg-muted sm:flex-row sm:items-center sm:justify-between">
+          <Logo />
+          <p>Built in Hyderabad for citizens and the people who fix the city.</p>
+          <a href="https://github.com/Narendarcodes/civic_issue_reporting_system" className={cn('inline-flex items-center gap-1.5 font-semibold hover:text-fg')}><Github size={16} />Source</a>
         </div>
-      </div>
+      </footer>
     </div>
   );
-};
+}
