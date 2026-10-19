@@ -38,6 +38,13 @@ const issueSchema = new mongoose.Schema({
   imageTextMatch: { type: Boolean },
   imageTextCoherenceScore: { type: Number },
   overallTrustScore: { type: Number },
+  // Area / ward used by the public scorecard
+  ward: { type: String },
+  // Ordered audit trail powering the public status timeline
+  statusHistory: { type: [Object], default: [] },
+  // AI closure proof (before/after comparison) — verdict "unavailable" without a key
+  closureCheck: { type: Object, default: null },
+  escalated: { type: Boolean, default: false },
 });
 
 export const Issue = mongoose.models.Issue || mongoose.model('Issue', issueSchema);
