@@ -1,5 +1,5 @@
 {
-  "name": "CivicConnect",
+  "name": "Civi-Snap",
   "description": "A smart civic issue reporting and management system for citizens to report and track public infrastructure problems.",
   "requestFramePermissions": [
     "geolocation",

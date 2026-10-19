@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
-dotenv.config({ path: 'e:/civ/civic_issue_reporting_system/.env' });
+dotenv.config();
 
 const issueSchema = new mongoose.Schema({}, { strict: false });
 const Issue = mongoose.model('Issue', issueSchema, 'issues');

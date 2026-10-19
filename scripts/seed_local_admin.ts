@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import dotenv from 'dotenv';
-dotenv.config({ path: 'e:/civ/civic_issue_reporting_system/.env' });
+dotenv.config();
 
 const userSchema = new mongoose.Schema({}, { strict: false });
 const User = mongoose.model('User', userSchema, 'users');

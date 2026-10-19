@@ -11,3 +11,8 @@ civic.db
 *.bak
 rewrite.py
 .vercel
+
+# Deployment / runtime log dumps (may contain request data)
+logs.json
+recent_logs.json
+*.log.json

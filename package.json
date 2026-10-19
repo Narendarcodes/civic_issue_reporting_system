@@ -1,14 +1,17 @@
 {
-  "name": "react-example",
+  "name": "civic-issue-reporting-system",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "cross-env NODE_ENV=development tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "typecheck": "tsc --noEmit",
+    "start": "cross-env NODE_ENV=production tsx server.ts"
   },
   "dependencies": {
     "@fontsource-variable/outfit": "^5.3.0",

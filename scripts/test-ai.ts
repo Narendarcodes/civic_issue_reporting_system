@@ -1,4 +1,4 @@
-import { analyzeIssue } from './backend/services/ai';
+import { analyzeIssue } from '../backend/services/ai';
 import dotenv from 'dotenv';
 
 dotenv.config();
