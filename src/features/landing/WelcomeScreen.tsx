@@ -62,7 +62,7 @@ export function WelcomeScreen() {
       {/* Hero */}
       <section className="relative">
         <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_420px_at_80%_-10%,color-mix(in_srgb,var(--brand)_16%,transparent),transparent_70%)]" />
-        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pt-12 pb-16 lg:grid-cols-[1fr_1.15fr] lg:pt-20 lg:pb-24">
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pt-12 pb-16 lg:grid-cols-[1fr_1.25fr] lg:pt-20 lg:pb-28">
           <div>
             <motion.span {...fade()} className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1 text-xs font-semibold text-fg-muted shadow-[var(--shadow-e1)]">
               <span className="h-1.5 w-1.5 rounded-full bg-brand" /> Live in Hyderabad · free for citizens
@@ -95,10 +95,10 @@ export function WelcomeScreen() {
                 <span className="h-2.5 w-2.5 rounded-full bg-rose-400" /><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
                 <span className="ml-3 h-5 flex-1 max-w-[260px] rounded-full bg-surface text-[10px] leading-5 px-3 text-fg-subtle">civisnap.app/admin</span>
               </div>
-              <img src="/landing/hero-admin.png" alt={`${APP_NAME} admin console: city overview with live complaint map, overdue wall and KPIs`} className="block w-full" />
+              <img src="/landing/hero-admin.jpg" alt={`${APP_NAME} admin console: city overview with live complaint map, overdue wall and KPIs`} className="block w-full" />
             </div>
-            <div className="absolute -bottom-10 -left-4 sm:-left-10 w-[34%] min-w-[150px] overflow-hidden rounded-[28px] border-[6px] border-slate-900 bg-slate-900 shadow-[var(--shadow-e3)]">
-              <img src="/landing/hero-mobile.png" alt={`${APP_NAME} citizen app on a phone: report stepper`} className="block w-full rounded-[22px]" />
+            <div className="absolute -bottom-14 -left-3 sm:-left-8 w-[27%] min-w-[120px] overflow-hidden rounded-[26px] border-[6px] border-slate-900 bg-slate-900 shadow-[var(--shadow-e3)]">
+              <img src="/landing/hero-mobile.jpg" alt={`${APP_NAME} citizen app on a phone: report stepper`} className="block w-full rounded-[22px]" />
             </div>
             <div className="absolute -right-2 -top-6 sm:-right-6 hidden sm:flex items-center gap-3 rounded-[var(--radius-lg)] border border-line bg-surface p-3 pr-4 shadow-[var(--shadow-e3)]">
               <img src="/demo/pothole-after.jpg" alt="" className="h-11 w-11 rounded-[var(--radius-sm)] object-cover" />
@@ -109,7 +109,7 @@ export function WelcomeScreen() {
       </section>
 
       {/* How it works */}
-      <section id="how" className="border-y border-line bg-surface">
+      <section id="how" className="scroll-mt-16 border-y border-line bg-surface">
         <div className="mx-auto max-w-6xl px-5 py-20">
           <motion.p {...fade()} className="eyebrow">How it works</motion.p>
           <motion.h2 {...fade(0.04)} className="mt-2 max-w-2xl text-3xl sm:text-4xl font-semibold">From photo to fixed, in four public steps.</motion.h2>
@@ -130,7 +130,7 @@ export function WelcomeScreen() {
       </section>
 
       {/* Proof */}
-      <section id="proof" className="mx-auto max-w-6xl px-5 py-20">
+      <section id="proof" className="scroll-mt-16 mx-auto max-w-6xl px-5 py-20">
         <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.4fr]">
           <div>
             <motion.p {...fade()} className="eyebrow">Closure proof</motion.p>
@@ -157,7 +157,7 @@ export function WelcomeScreen() {
       </section>
 
       {/* Features */}
-      <section id="features" className="border-y border-line bg-surface">
+      <section id="features" className="scroll-mt-16 border-y border-line bg-surface">
         <div className="mx-auto max-w-6xl px-5 py-20">
           <motion.p {...fade()} className="eyebrow">Built for accountability</motion.p>
           <motion.h2 {...fade(0.04)} className="mt-2 max-w-2xl text-3xl sm:text-4xl font-semibold">Everything a city needs to be held to its word.</motion.h2>
@@ -176,7 +176,7 @@ export function WelcomeScreen() {
       </section>
 
       {/* Impact + cities CTA */}
-      <section id="cities" className="mx-auto max-w-6xl px-5 py-20">
+      <section id="cities" className="scroll-mt-16 mx-auto max-w-6xl px-5 py-20">
         <motion.div {...fade()} className="relative overflow-hidden rounded-[28px] bg-emerald-950 px-6 py-14 text-white sm:px-14">
           <img src="/demo/streetlight-after.jpg" alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />
           <div className="absolute inset-0 bg-gradient-to-r from-emerald-950 via-emerald-950/90 to-emerald-950/40" />

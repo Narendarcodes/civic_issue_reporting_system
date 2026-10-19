@@ -123,6 +123,19 @@ export default function App({ forcePortal }: { forcePortal?: 'user' | 'admin' } 
     if (phase === 'app') writeHash(view, openIssueId);
   }, [phase, view, openIssueId]);
 
+  // Follow manual / external hash changes (links like #feed&issue=CS-2041, back button).
+  useEffect(() => {
+    if (phase !== 'app') return;
+    const onHash = () => {
+      const h = readHash();
+      const allowed = isAdmin ? ADMIN_VIEWS : CITIZEN_VIEWS;
+      if (h.view && allowed.includes(h.view as AppView)) setView(h.view as AppView);
+      setOpenIssueId(h.issue || null);
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [phase, isAdmin]);
+
   const go = useCallback((v: AppView) => {
     setView(v);
     setOpenIssueId(null);
